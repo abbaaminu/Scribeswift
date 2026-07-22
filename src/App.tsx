@@ -3,13 +3,19 @@ import { Header } from './components/Header';
 import { FileUpload } from './components/FileUpload';
 import { TranscriptView } from './components/TranscriptView';
 import { SubscriptionModal } from './components/SubscriptionModal';
+import { AuthModal } from './components/AuthModal';
 import { HistoryDrawer } from './components/HistoryDrawer';
 import { Toast } from './components/Toast';
 import { SubscriptionTier, TranscriptionData } from './types';
-import { Sparkles, Shield, Zap, FileAudio, Lock, Crown, ArrowLeft } from 'lucide-react';
+import { Sparkles, Shield, Zap, FileAudio, Lock, Crown, ArrowLeft, Mail } from 'lucide-react';
+import { User as SupabaseUser } from '@supabase/supabase-js';
+import { supabase, fetchUserProfile, isSupabaseConfigured } from './lib/supabase';
+import { CONTACT_EMAIL } from './utils/constants';
 
 export default function App() {
-  // Persistence state
+  // Supabase Auth & User Tier State
+  const [user, setUser] = useState<SupabaseUser | null>(null);
+
   const [tier, setTier] = useState<SubscriptionTier>(() => {
     const savedTier = localStorage.getItem('scribeswift_tier');
     return (savedTier as SubscriptionTier) || 'free';
@@ -26,11 +32,51 @@ export default function App() {
 
   const [activeTranscription, setActiveTranscription] = useState<TranscriptionData | null>(null);
   const [isUpgradeModalOpen, setIsUpgradeModalOpen] = useState(false);
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [toast, setToast] = useState<{
     message: string;
     type?: 'lock' | 'success' | 'info' | 'error';
   } | null>(null);
+
+  // Initialize Supabase Auth session & onAuthStateChange listener
+  useEffect(() => {
+    if (!isSupabaseConfigured) return;
+
+    // Check existing active session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      const currentUser = session?.user ?? null;
+      setUser(currentUser);
+      if (currentUser) {
+        syncProfileTier(currentUser.id);
+      }
+    });
+
+    // Listen for real-time auth changes (Sign in, OAuth callback, Sign out)
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      const currentUser = session?.user ?? null;
+      setUser(currentUser);
+      if (currentUser) {
+        await syncProfileTier(currentUser.id);
+      } else {
+        const savedTier = (localStorage.getItem('scribeswift_tier') as SubscriptionTier) || 'free';
+        setTier(savedTier);
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  // Fetch is_premium status from Supabase `profiles` table where id = user.id
+  const syncProfileTier = async (userId: string) => {
+    const profile = await fetchUserProfile(userId);
+    if (profile && typeof profile.is_premium === 'boolean') {
+      const userTier: SubscriptionTier = profile.is_premium ? 'premium' : 'free';
+      setTier(userTier);
+    }
+  };
 
   // Sync tier & history with localStorage
   useEffect(() => {
@@ -45,7 +91,7 @@ export default function App() {
     const newTier: SubscriptionTier = tier === 'free' ? 'premium' : 'free';
     setTier(newTier);
     setToast({
-      message: `Test mode switched to ${newTier === 'premium' ? 'Premium ($1/mo)' : 'Free Plan'}.`,
+      message: `Tier switched to ${newTier === 'premium' ? 'Premium ($1/mo)' : 'Free Plan'}.`,
       type: newTier === 'premium' ? 'success' : 'info',
     });
   };
@@ -56,6 +102,15 @@ export default function App() {
       message: '🎉 Congratulations! You are now subscribed to ScribeSwift Premium ($1/month). All copy, print, and export features unlocked!',
       type: 'success',
     });
+  };
+
+  const handleSignOut = async () => {
+    if (isSupabaseConfigured) {
+      await supabase.auth.signOut();
+    }
+    setUser(null);
+    setTier('free');
+    setToast({ message: 'Signed out of ScribeSwift.', type: 'info' });
   };
 
   const handleLockedActionClick = (actionName: string) => {
@@ -86,7 +141,10 @@ export default function App() {
       {/* Navigation Header */}
       <Header
         tier={tier}
+        user={user}
         onOpenUpgradeModal={() => setIsUpgradeModalOpen(true)}
+        onOpenAuthModal={() => setIsAuthModalOpen(true)}
+        onSignOut={handleSignOut}
         onToggleHistory={() => setIsHistoryOpen(true)}
         historyCount={history.length}
         onToggleTier={handleToggleTier}
@@ -177,19 +235,29 @@ export default function App() {
       {/* Footer */}
       <footer className="border-t border-slate-900 bg-slate-950 py-6 text-center text-xs text-slate-500">
         <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-3">
-          <span>ScribeSwift AI Engine • Built with Google AI Studio File API & Gemini 3.6</span>
+          <div className="flex flex-col sm:flex-row items-center gap-2 sm:gap-4">
+            <span>ScribeSwift AI Engine • Built with Google AI Studio File API & Gemini 3.6</span>
+            <span className="hidden sm:inline text-slate-800">•</span>
+            <a
+              href={`mailto:${CONTACT_EMAIL}`}
+              className="inline-flex items-center gap-1 text-indigo-400 hover:text-indigo-300 hover:underline"
+            >
+              <Mail className="w-3.5 h-3.5" />
+              <span>Contact Support: {CONTACT_EMAIL}</span>
+            </a>
+          </div>
           <div className="flex items-center gap-4">
             <button
               onClick={() => setIsUpgradeModalOpen(true)}
-              className="text-indigo-400 hover:underline"
+              className="text-indigo-400 hover:underline cursor-pointer"
             >
               Subscription Tier ($1/mo)
             </button>
             <button
               onClick={handleToggleTier}
-              className="text-slate-400 hover:text-white underline"
+              className="text-slate-400 hover:text-white underline cursor-pointer"
             >
-              Toggle Test Tier ({tier === 'premium' ? 'Premium' : 'Free'})
+              Toggle Tier ({tier === 'premium' ? 'Premium' : 'Free'})
             </button>
           </div>
         </div>
@@ -198,8 +266,20 @@ export default function App() {
       {/* Modals & Drawers */}
       <SubscriptionModal
         isOpen={isUpgradeModalOpen}
+        user={user}
         onClose={() => setIsUpgradeModalOpen(false)}
         onSubscribeSuccess={handleSubscribeSuccess}
+      />
+
+      <AuthModal
+        isOpen={isAuthModalOpen}
+        onClose={() => setIsAuthModalOpen(false)}
+        onAuthSuccess={(msg) =>
+          setToast({
+            message: msg,
+            type: 'success',
+          })
+        }
       />
 
       <HistoryDrawer

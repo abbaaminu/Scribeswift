@@ -5,6 +5,23 @@ import os from 'os';
 import multer from 'multer';
 import { GoogleGenAI, Type } from '@google/genai';
 import { createServer as createViteServer } from 'vite';
+import { createClient } from '@supabase/supabase-js';
+
+// Helper to instantiate Supabase client on server
+const getSupabaseServerClient = () => {
+  const supabaseUrl =
+    process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
+  const supabaseKey =
+    process.env.SUPABASE_SERVICE_ROLE_KEY ||
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+    process.env.VITE_SUPABASE_ANON_KEY ||
+    '';
+
+  if (!supabaseUrl || !supabaseKey) {
+    return null;
+  }
+  return createClient(supabaseUrl, supabaseKey);
+};
 
 // Ensure uploads directory exists
 const uploadsDir = path.join(process.cwd(), 'uploads');
@@ -45,6 +62,109 @@ async function startServer() {
   // Health check
   app.get('/api/health', (req, res) => {
     res.json({ status: 'ok', maxUploadSizeMb: 100, service: 'ScribeSwift API' });
+  });
+
+  // Paddle Webhook Info Endpoint
+  app.get('/api/webhooks/paddle', (req, res) => {
+    res.json({
+      status: 'active',
+      endpoint: '/api/webhooks/paddle',
+      description: 'Listens for subscription.created, subscription.updated, and subscription.canceled Paddle events to update Supabase profiles.is_premium.',
+    });
+  });
+
+  // Paddle Billing Webhook Handler
+  app.post('/api/webhooks/paddle', async (req, res) => {
+    try {
+      const payload = req.body || {};
+      const eventType = payload.event_type || payload.alert_name || payload.event_name || 'unknown';
+      console.log(`[Paddle Webhook] Received event: ${eventType}`);
+
+      const data = payload.data || payload;
+      const customData =
+        data.custom_data ||
+        payload.custom_data ||
+        (payload.passthrough
+          ? typeof payload.passthrough === 'string'
+            ? JSON.parse(payload.passthrough)
+            : payload.passthrough
+          : {});
+
+      const userId =
+        customData.userId ||
+        customData.user_id ||
+        data.userId ||
+        data.user_id ||
+        payload.userId;
+
+      if (!userId) {
+        console.warn('[Paddle Webhook] No userId found in webhook payload customData. Payload:', JSON.stringify(payload));
+        return res.json({ status: 'ok', warning: 'No userId found in webhook payload' });
+      }
+
+      const supabaseServer = getSupabaseServerClient();
+      if (!supabaseServer) {
+        console.warn('[Paddle Webhook] Supabase credentials missing on server. Unable to update profiles table.');
+        return res.json({ status: 'ok', warning: 'Supabase credentials missing on server' });
+      }
+
+      let isPremium = false;
+      const activeEvents = [
+        'subscription.created',
+        'subscription.updated',
+        'subscription_created',
+        'subscription_updated',
+        'transaction.completed',
+        'payment_succeeded',
+      ];
+      const cancelEvents = [
+        'subscription.canceled',
+        'subscription.cancelled',
+        'subscription_canceled',
+        'subscription.paused',
+        'subscription_paused',
+      ];
+
+      if (activeEvents.includes(eventType)) {
+        isPremium = true;
+      } else if (cancelEvents.includes(eventType)) {
+        isPremium = false;
+      } else {
+        // Fallback status check
+        const status = data.status || payload.status;
+        if (status === 'active' || status === 'trailing') {
+          isPremium = true;
+        }
+      }
+
+      console.log(`[Paddle Webhook] Updating user ${userId} -> is_premium: ${isPremium} (event: ${eventType})`);
+
+      const { error } = await supabaseServer
+        .from('profiles')
+        .upsert(
+          {
+            id: userId,
+            is_premium: isPremium,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: 'id' }
+        );
+
+      if (error) {
+        console.error('[Paddle Webhook] Error updating profiles in Supabase:', error.message);
+        return res.status(500).json({ error: error.message });
+      }
+
+      return res.json({
+        status: 'success',
+        userId,
+        is_premium: isPremium,
+        eventType,
+      });
+    } catch (err: any) {
+      console.error('[Paddle Webhook Error]:', err);
+      return res.status(500).json({ error: err.message || 'Webhook processing failed' });
+    }
   });
 
   // Sample Transcriptions for Instant Demo Testing

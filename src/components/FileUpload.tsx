@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
-import { Upload, FileAudio, FileVideo, AlertTriangle, CheckCircle2, Sparkles, Music, Film, ArrowUpRight } from 'lucide-react';
+import { Upload, FileAudio, FileVideo, AlertTriangle, CheckCircle2, Sparkles, Music, Film, ArrowUpRight, Mail, AlertCircle, X } from 'lucide-react';
 import { TranscriptionData, UploadProgress } from '../types';
+import { CONTACT_EMAIL } from '../utils/constants';
 
 interface FileUploadProps {
   onTranscriptionComplete: (data: TranscriptionData) => void;
@@ -19,21 +20,28 @@ export const FileUpload: React.FC<FileUploadProps> = ({
     message: '',
   });
   const [selectedLanguage, setSelectedLanguage] = useState('Auto-detect');
+  const [uploadError, setUploadError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const triggerError = (msg: string) => {
+    setUploadError(msg);
+    onError(msg);
+  };
 
   const MAX_SIZE_MB = 100;
   const MAX_SIZE_BYTES = MAX_SIZE_MB * 1024 * 1024; // 100MB
 
   const handleFileSelection = (file: File) => {
+    setUploadError(null);
     if (file.size > MAX_SIZE_BYTES) {
-      onError(`File size (${(file.size / (1024 * 1024)).toFixed(1)}MB) exceeds the maximum allowed limit of 100MB. Please select a smaller file.`);
+      triggerError(`File size (${(file.size / (1024 * 1024)).toFixed(1)}MB) exceeds the maximum allowed limit of 100MB. Please select a smaller file.`);
       setSelectedFile(null);
       return;
     }
 
     const isAudioOrVideo = file.type.startsWith('audio/') || file.type.startsWith('video/') || /\.(mp3|mp4|wav|m4a|aac|ogg|mov|webm|mkv|flac)$/i.test(file.name);
     if (!isAudioOrVideo) {
-      onError('Unsupported file format. Please select an audio or video file (MP3, MP4, WAV, M4A, AAC, MOV, WEBM, MKV).');
+      triggerError('Unsupported file format. Please select an audio or video file (MP3, MP4, WAV, M4A, AAC, MOV, WEBM, MKV).');
       setSelectedFile(null);
       return;
     }
@@ -106,22 +114,22 @@ export const FileUpload: React.FC<FileUploadProps> = ({
             setSelectedFile(null);
           }, 600);
         } catch (err) {
-          onError('Failed to parse server transcription result.');
+          triggerError('Failed to parse server transcription result.');
           setProgress({ stage: 'idle', percent: 0, message: '' });
         }
       } else {
         try {
           const errRes = JSON.parse(xhr.responseText);
-          onError(errRes.error || 'Server error during transcription.');
+          triggerError(errRes.error || 'Server error during transcription.');
         } catch (e) {
-          onError(`Server error (Status ${xhr.status}) during transcription.`);
+          triggerError(`Server error (Status ${xhr.status}) during transcription.`);
         }
         setProgress({ stage: 'idle', percent: 0, message: '' });
       }
     };
 
     xhr.onerror = () => {
-      onError('Network connection error during file upload.');
+      triggerError('Network connection error during file upload.');
       setProgress({ stage: 'idle', percent: 0, message: '' });
     };
 
@@ -174,6 +182,34 @@ export const FileUpload: React.FC<FileUploadProps> = ({
 
   return (
     <div className="w-full max-w-4xl mx-auto space-y-6">
+      {/* Error Callout Banner */}
+      {uploadError && (
+        <div className="p-4 rounded-2xl bg-rose-950/80 border border-rose-500/50 text-rose-200 text-sm flex items-start justify-between gap-3 shadow-lg animate-fadeIn">
+          <div className="flex items-start gap-2.5">
+            <AlertCircle className="w-5 h-5 text-rose-400 flex-shrink-0 mt-0.5" />
+            <div>
+              <p className="font-semibold text-rose-100">{uploadError}</p>
+              <p className="text-xs text-rose-300/80 mt-1 flex items-center gap-1">
+                <span>Need assistance?</span>
+                <a
+                  href={`mailto:${CONTACT_EMAIL}`}
+                  className="font-bold underline text-white hover:text-rose-100 inline-flex items-center gap-1"
+                >
+                  <Mail className="w-3 h-3" />
+                  <span>Contact Support: {CONTACT_EMAIL}</span>
+                </a>
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => setUploadError(null)}
+            className="p-1 rounded-lg text-rose-300 hover:text-white hover:bg-rose-900/50 transition"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
       {/* Upload Box */}
       <div
         onDragEnter={handleDrag}

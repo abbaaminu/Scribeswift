@@ -1,5 +1,6 @@
 import React, { useEffect } from 'react';
-import { Lock, Sparkles, AlertCircle, X, CheckCircle2 } from 'lucide-react';
+import { Lock, Sparkles, AlertCircle, X, CheckCircle2, Mail } from 'lucide-react';
+import { CONTACT_EMAIL } from '../utils/constants';
 
 interface ToastProps {
   message: string;
@@ -43,6 +44,15 @@ export const Toast: React.FC<ToastProps> = ({
 
         <div className="flex-1 text-xs sm:text-sm font-medium leading-normal">
           <p>{message}</p>
+          {type === 'error' && (
+            <a
+              href={`mailto:${CONTACT_EMAIL}`}
+              className="mt-2 text-xs font-semibold text-rose-200 hover:text-white underline inline-flex items-center gap-1 block"
+            >
+              <Mail className="w-3 h-3" />
+              <span>Contact Support: {CONTACT_EMAIL}</span>
+            </a>
+          )}
           {type === 'lock' && onUpgradeClick && (
             <button
               onClick={() => {
