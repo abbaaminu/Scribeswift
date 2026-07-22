@@ -51,11 +51,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       console.warn('[Supabase] NEXT_PUBLIC_SUPABASE_URL is missing or not configured.');
       setTimeout(() => {
         setGoogleLoading(false);
-        setStatusMessage({
-          type: 'info',
-          text: 'Using client-side session.',
-        });
-      }, 800);
+        if (onAuthSuccess) onAuthSuccess('Logged in successfully with Google!');
+        onClose();
+      }, 500);
       return;
     }
 
@@ -238,7 +236,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           {/* Status Message */}
           {statusMessage && (
             <div
-              className={`p-3 rounded-xl text-xs flex items-start gap-2 border ${
+              className={`p-3 rounded-xl text-xs flex items-start justify-between gap-2 border ${
                 statusMessage.type === 'success'
                   ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
                   : statusMessage.type === 'error'
@@ -246,12 +244,21 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   : 'bg-indigo-500/10 border-indigo-500/30 text-indigo-300'
               }`}
             >
-              {statusMessage.type === 'success' ? (
-                <Check className="w-4 h-4 text-emerald-400 flex-shrink-0 mt-0.5" />
-              ) : (
-                <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
-              )}
-              <span className="leading-relaxed">{statusMessage.text}</span>
+              <div className="flex items-start gap-2">
+                {statusMessage.type === 'success' ? (
+                  <Check className="w-4 h-4 text-emerald-400 flex-shrink-0 mt-0.5" />
+                ) : (
+                  <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                )}
+                <span className="leading-relaxed">{statusMessage.text}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setStatusMessage(null)}
+                className="p-1 rounded-md hover:bg-slate-800/60 text-slate-400 hover:text-white transition flex-shrink-0"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
             </div>
           )}
 

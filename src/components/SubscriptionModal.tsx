@@ -145,9 +145,18 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
         {/* Feature Comparison */}
         <div className="p-6 space-y-5">
           {statusNotice && (
-            <div className="p-3 rounded-xl bg-indigo-500/10 border border-indigo-500/30 text-indigo-200 text-xs flex items-start gap-2">
-              <AlertCircle className="w-4 h-4 text-indigo-400 flex-shrink-0 mt-0.5" />
-              <span>{statusNotice}</span>
+            <div className="p-3 rounded-xl bg-indigo-500/10 border border-indigo-500/30 text-indigo-200 text-xs flex items-start justify-between gap-2">
+              <div className="flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 text-indigo-400 flex-shrink-0 mt-0.5" />
+                <span>{statusNotice}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setStatusNotice(null)}
+                className="p-1 rounded-md hover:bg-slate-800/60 text-slate-400 hover:text-white transition flex-shrink-0"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
             </div>
           )}
 
