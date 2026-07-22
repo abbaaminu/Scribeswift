@@ -49,6 +49,7 @@ export default function App() {
       const currentUser = session?.user ?? null;
       setUser(currentUser);
       if (currentUser) {
+        setIsAuthModalOpen(false);
         syncProfileTier(currentUser.id);
       }
     });
@@ -60,6 +61,7 @@ export default function App() {
       const currentUser = session?.user ?? null;
       setUser(currentUser);
       if (currentUser) {
+        setIsAuthModalOpen(false);
         await syncProfileTier(currentUser.id);
       } else {
         const savedTier = (localStorage.getItem('scribeswift_tier') as SubscriptionTier) || 'free';
