@@ -34,13 +34,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [googleLoading, setGoogleLoading] = useState(false);
   const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
 
-  if (!isOpen) return null;
-
   React.useEffect(() => {
     if (isOpen && !isSupabaseConfigured) {
       console.warn('[Supabase] NEXT_PUBLIC_SUPABASE_URL is missing or not configured.');
     }
   }, [isOpen]);
+
+  if (!isOpen) return null;
 
   // Google OAuth Sign In
   const handleGoogleSignIn = async () => {

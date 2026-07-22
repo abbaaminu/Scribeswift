@@ -33,13 +33,29 @@ if (!getEnvVar('NEXT_PUBLIC_SUPABASE_URL') && !getEnvVar('VITE_SUPABASE_URL')) {
   console.warn('[Supabase] NEXT_PUBLIC_SUPABASE_URL is missing or not configured.');
 }
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
-  auth: {
-    persistSession: true,
-    autoRefreshToken: true,
-    detectSessionInUrl: true,
-  },
-});
+// Safely instantiate Supabase client with fallback check to prevent app crashes
+const createSafeSupabaseClient = () => {
+  try {
+    return createClient(supabaseUrl, supabaseAnonKey, {
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: true,
+      },
+    });
+  } catch (err) {
+    console.warn('[Supabase] Failed to initialize Supabase client:', err);
+    return createClient('https://placeholder-project.supabase.co', 'placeholder-anon-key', {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+        detectSessionInUrl: false,
+      },
+    });
+  }
+};
+
+export const supabase = createSafeSupabaseClient();
 
 export interface SupabaseProfile {
   id: string;

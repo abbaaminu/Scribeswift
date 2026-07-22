@@ -4,6 +4,7 @@ import { FileUpload } from './components/FileUpload';
 import { TranscriptView } from './components/TranscriptView';
 import { SubscriptionModal } from './components/SubscriptionModal';
 import { AuthModal } from './components/AuthModal';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { HistoryDrawer } from './components/HistoryDrawer';
 import { Toast } from './components/Toast';
 import { SubscriptionTier, TranscriptionData } from './types';
@@ -264,23 +265,27 @@ export default function App() {
       </footer>
 
       {/* Modals & Drawers */}
-      <SubscriptionModal
-        isOpen={isUpgradeModalOpen}
-        user={user}
-        onClose={() => setIsUpgradeModalOpen(false)}
-        onSubscribeSuccess={handleSubscribeSuccess}
-      />
+      <ErrorBoundary fallbackTitle="Subscription Upgrade Notice" onReset={() => setIsUpgradeModalOpen(false)}>
+        <SubscriptionModal
+          isOpen={isUpgradeModalOpen}
+          user={user}
+          onClose={() => setIsUpgradeModalOpen(false)}
+          onSubscribeSuccess={handleSubscribeSuccess}
+        />
+      </ErrorBoundary>
 
-      <AuthModal
-        isOpen={isAuthModalOpen}
-        onClose={() => setIsAuthModalOpen(false)}
-        onAuthSuccess={(msg) =>
-          setToast({
-            message: msg,
-            type: 'success',
-          })
-        }
-      />
+      <ErrorBoundary fallbackTitle="Authentication Notice" onReset={() => setIsAuthModalOpen(false)}>
+        <AuthModal
+          isOpen={isAuthModalOpen}
+          onClose={() => setIsAuthModalOpen(false)}
+          onAuthSuccess={(msg) =>
+            setToast({
+              message: msg,
+              type: 'success',
+            })
+          }
+        />
+      </ErrorBoundary>
 
       <HistoryDrawer
         isOpen={isHistoryOpen}

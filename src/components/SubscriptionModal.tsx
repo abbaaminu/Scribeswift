@@ -27,8 +27,6 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
   const [name, setName] = useState('');
   const [statusNotice, setStatusNotice] = useState<string | null>(null);
 
-  if (!isOpen) return null;
-
   const isPaddleConfigured = Boolean(paddleClientToken && paddlePriceId);
 
   React.useEffect(() => {
@@ -36,6 +34,8 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
       console.warn('[Paddle] NEXT_PUBLIC_PADDLE_CLIENT_TOKEN is missing or not configured.');
     }
   }, [isOpen, isPaddleConfigured]);
+
+  if (!isOpen) return null;
 
   const handlePaddleSubscribe = async () => {
     setPaddleLoading(true);

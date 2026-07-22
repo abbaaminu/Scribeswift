@@ -47,7 +47,7 @@ async function startServer() {
   const getGeminiClient = () => {
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
-      throw new Error('GEMINI_API_KEY environment variable is not configured.');
+      throw new Error('Gemini API key is not configured');
     }
     return new GoogleGenAI({
       apiKey,
@@ -312,6 +312,10 @@ async function startServer() {
     let uploadedFileRef: any = null;
 
     try {
+      if (!process.env.GEMINI_API_KEY) {
+        return res.status(500).json({ error: 'Gemini API key is not configured' });
+      }
+
       if (!req.file) {
         return res.status(400).json({ error: 'No media file uploaded. Please select an audio or video file up to 100MB.' });
       }
