@@ -1,0 +1,6 @@
+{
+  "name": "ScribeSwift",
+  "description": "Fast AI transcription, speaker identification, and summary for audio/video up to 100MB powered by Gemini File API.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
