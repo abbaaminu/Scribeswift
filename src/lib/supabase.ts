@@ -29,6 +29,10 @@ export const isSupabaseConfigured = Boolean(
   !supabaseUrl.includes('placeholder-project')
 );
 
+if (!getEnvVar('NEXT_PUBLIC_SUPABASE_URL') && !getEnvVar('VITE_SUPABASE_URL')) {
+  console.warn('[Supabase] NEXT_PUBLIC_SUPABASE_URL is missing or not configured.');
+}
+
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
     persistSession: true,

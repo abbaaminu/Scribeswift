@@ -31,6 +31,12 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
 
   const isPaddleConfigured = Boolean(paddleClientToken && paddlePriceId);
 
+  React.useEffect(() => {
+    if (isOpen && !isPaddleConfigured) {
+      console.warn('[Paddle] NEXT_PUBLIC_PADDLE_CLIENT_TOKEN is missing or not configured.');
+    }
+  }, [isOpen, isPaddleConfigured]);
+
   const handlePaddleSubscribe = async () => {
     setPaddleLoading(true);
     setStatusNotice(null);
@@ -57,7 +63,8 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
 
     if (!opened) {
       if (!isPaddleConfigured) {
-        setStatusNotice('Paddle environment variables NEXT_PUBLIC_PADDLE_CLIENT_TOKEN or NEXT_PUBLIC_PADDLE_PRICE_ID missing in .env. Showing direct upgrade option below.');
+        console.warn('[Paddle] NEXT_PUBLIC_PADDLE_CLIENT_TOKEN is missing or not configured.');
+        setStatusNotice('Showing direct upgrade option below.');
       } else {
         setStatusNotice('Could not open Paddle checkout. Check console or credentials.');
       }
@@ -209,12 +216,6 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
                 </>
               )}
             </button>
-
-            {!isPaddleConfigured && (
-              <p className="text-[11px] text-slate-400 text-center">
-                Note: Set <code className="text-indigo-300 bg-slate-950 px-1 rounded">NEXT_PUBLIC_PADDLE_CLIENT_TOKEN</code> & <code className="text-indigo-300 bg-slate-950 px-1 rounded">NEXT_PUBLIC_PADDLE_PRICE_ID</code> in <code className="text-indigo-300 bg-slate-950 px-1 rounded">.env</code> to connect your live Paddle product.
-              </p>
-            )}
           </div>
 
           <div className="relative flex items-center justify-center my-2">

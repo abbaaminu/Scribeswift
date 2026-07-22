@@ -18,6 +18,10 @@ export const paddleClientToken =
   getEnvVar('VITE_PADDLE_CLIENT_TOKEN') ||
   '';
 
+if (!paddleClientToken) {
+  console.warn('[Paddle] NEXT_PUBLIC_PADDLE_CLIENT_TOKEN is missing or not configured.');
+}
+
 export const paddlePriceId =
   getEnvVar('NEXT_PUBLIC_PADDLE_PRICE_ID') ||
   getEnvVar('VITE_PADDLE_PRICE_ID') ||
