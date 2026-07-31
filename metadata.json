@@ -1,0 +1,6 @@
+{
+  "name": "ScribeSwift",
+  "description": "Fast AI transcription, speaker identification, and summary for audio/video up to 100MB powered by Whisper Large v3 Turbo via the Groq API.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}
