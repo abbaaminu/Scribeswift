@@ -193,11 +193,37 @@ export default function App() {
               </p>
             </div>
 
-            {/* Drag & Drop File Uploader */}
-            <FileUpload
-              onTranscriptionComplete={handleTranscriptionComplete}
-              onError={(msg) => setToast({ message: msg, type: 'error' })}
-            />
+            {/* Drag & Drop File Uploader — gated behind sign-in so first-time
+                visitors see only marketing info + a Sign In/Sign Up CTA.
+                Falls back to showing the tool directly if Supabase auth
+                isn't configured, so local/dev setups without auth keys
+                still work. */}
+            {user || !isSupabaseConfigured ? (
+              <FileUpload
+                onTranscriptionComplete={handleTranscriptionComplete}
+                onError={(msg) => setToast({ message: msg, type: 'error' })}
+              />
+            ) : (
+              <div className="max-w-2xl mx-auto text-center bg-slate-900/40 border border-slate-800/80 rounded-3xl p-10 sm:p-14 space-y-6">
+                <div className="w-16 h-16 mx-auto rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center">
+                  <Lock className="w-7 h-7 text-indigo-400" />
+                </div>
+                <h2 className="text-xl sm:text-2xl font-bold text-white">
+                  Sign in to start transcribing
+                </h2>
+                <p className="text-sm text-slate-400 max-w-md mx-auto">
+                  Create a free account to upload audio & video, keep your transcription
+                  history, and unlock the $1/mo Premium plan whenever you're ready.
+                </p>
+                <button
+                  onClick={() => setIsAuthModalOpen(true)}
+                  className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-gradient-to-r from-indigo-500 to-purple-600 text-white font-bold text-sm hover:opacity-90 transition cursor-pointer"
+                >
+                  <Sparkles className="w-4 h-4" />
+                  Sign In / Sign Up — It's Free
+                </button>
+              </div>
+            )}
 
             {/* Feature Value Grid */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-6 border-t border-slate-900">
@@ -241,7 +267,7 @@ export default function App() {
           <div className="flex flex-col sm:flex-row items-center gap-2 sm:gap-4">
             <span>ScribeSwift AI Engine</span>
             <span className="hidden sm:inline text-slate-800">•</span>
-            <a
+            
               href={`mailto:${CONTACT_EMAIL}`}
               className="inline-flex items-center gap-1 text-indigo-400 hover:text-indigo-300 hover:underline"
             >
@@ -250,12 +276,14 @@ export default function App() {
             </a>
           </div>
           <div className="flex items-center gap-4">
-            <button
-              onClick={() => setIsUpgradeModalOpen(true)}
-              className="text-indigo-400 hover:underline cursor-pointer"
-            >
-              Subscription Tier ($1/mo)
-            </button>
+            {user && (
+              <button
+                onClick={() => setIsUpgradeModalOpen(true)}
+                className="text-indigo-400 hover:underline cursor-pointer"
+              >
+                Subscription Tier ($1/mo)
+              </button>
+            )}
             {!(import.meta as any).env?.PROD && (
               <button
                 onClick={handleToggleTier}
