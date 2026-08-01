@@ -63,20 +63,22 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* Right Action Controls */}
         <div className="flex items-center gap-2 sm:gap-3">
-          {/* Quick Demo Tier Switcher (For testing/evaluating both modes easily) */}
-          <button
-            onClick={onToggleTier}
-            title="Click to toggle between Free & $1/mo Premium test modes"
-            className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium text-slate-400 hover:text-slate-200 bg-slate-800/80 border border-slate-700/80 hover:bg-slate-800 transition cursor-pointer"
-          >
-            <span className="text-slate-500">Tier:</span>
-            <span className={isPremium ? 'text-emerald-400 font-bold' : 'text-amber-400 font-bold'}>
-              {isPremium ? 'Premium ($1)' : 'Free'}
-            </span>
-          </button>
+          {/* Quick Demo Tier Switcher (dev-only — bypasses payment, must never ship to production) */}
+          {!(import.meta as any).env?.PROD && (
+            <button
+              onClick={onToggleTier}
+              title="Dev-only: bypasses payment for local testing"
+              className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium text-slate-400 hover:text-slate-200 bg-slate-800/80 border border-slate-700/80 hover:bg-slate-800 transition cursor-pointer"
+            >
+              <span className="text-slate-500">Tier:</span>
+              <span className={isPremium ? 'text-emerald-400 font-bold' : 'text-amber-400 font-bold'}>
+                {isPremium ? 'Premium ($1)' : 'Free'}
+              </span>
+            </button>
+          )}
 
-          {/* User Tier Status Badge & Upgrade Button */}
-          {isPremium ? (
+          {/* User Tier Status Badge & Upgrade Button — hidden until signed in */}
+          {user && (isPremium ? (
             <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs font-medium shadow-sm">
               <ShieldCheck className="w-4 h-4 text-emerald-400" />
               <span className="font-semibold hidden sm:inline">Premium Member</span>
@@ -90,7 +92,7 @@ export const Header: React.FC<HeaderProps> = ({
               <span>Upgrade to Premium</span>
               <span className="bg-white/20 text-white text-[10px] px-1.5 py-0.2 rounded-full font-bold">$1/mo</span>
             </button>
-          )}
+          ))}
 
           {/* Supabase User Auth State / Menu */}
           {user ? (
@@ -165,19 +167,21 @@ export const Header: React.FC<HeaderProps> = ({
             </button>
           )}
 
-          {/* History Button */}
-          <button
-            onClick={onToggleHistory}
-            className="relative p-2 rounded-xl text-slate-300 hover:text-white hover:bg-slate-800 transition border border-slate-800 hover:border-slate-700 cursor-pointer"
-            title="Transcription History"
-          >
-            <History className="w-5 h-5" />
-            {historyCount > 0 && (
-              <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-indigo-500 text-[10px] font-bold text-white flex items-center justify-center">
-                {historyCount}
-              </span>
-            )}
-          </button>
+          {/* History Button — hidden until signed in */}
+          {user && (
+            <button
+              onClick={onToggleHistory}
+              className="relative p-2 rounded-xl text-slate-300 hover:text-white hover:bg-slate-800 transition border border-slate-800 hover:border-slate-700 cursor-pointer"
+              title="Transcription History"
+            >
+              <History className="w-5 h-5" />
+              {historyCount > 0 && (
+                <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-indigo-500 text-[10px] font-bold text-white flex items-center justify-center">
+                  {historyCount}
+                </span>
+              )}
+            </button>
+          )}
         </div>
       </div>
     </header>
