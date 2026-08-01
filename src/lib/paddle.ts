@@ -33,6 +33,22 @@ export const paddleEnvironment = (
   'sandbox'
 ) as 'sandbox' | 'production';
 
+// --- Diagnostics: catch the classic token/environment mismatch early ---
+if (paddleClientToken) {
+  const tokenLooksLive = paddleClientToken.startsWith('live_');
+  const tokenLooksTest = paddleClientToken.startsWith('test_');
+  if (paddleEnvironment === 'production' && tokenLooksTest) {
+    console.error(
+      '[Paddle] Mismatch: VITE_PADDLE_ENV is "production" but your client token starts with "test_" (a sandbox token). Use a "live_" token, or set VITE_PADDLE_ENV=sandbox.'
+    );
+  } else if (paddleEnvironment === 'sandbox' && tokenLooksLive) {
+    console.error(
+      '[Paddle] Mismatch: VITE_PADDLE_ENV is "sandbox" but your client token starts with "live_" (a production token). Use a "test_" token, or set VITE_PADDLE_ENV=production.'
+    );
+  }
+  console.log(`[Paddle] Initializing in "${paddleEnvironment}" mode with a "${paddleClientToken.slice(0, 5)}..." token.`);
+}
+
 let paddleInstancePromise: Promise<Paddle | undefined> | null = null;
 
 // Paddle.Initialize takes a single global eventCallback (it's not passed per
@@ -58,6 +74,8 @@ export async function getPaddleInstance(): Promise<Paddle | undefined> {
           activeCheckoutCallbacks.onSuccess?.();
         } else if (event?.name === 'checkout.closed') {
           activeCheckoutCallbacks.onClose?.();
+        } else if (event?.name === 'checkout.error') {
+          console.error('[Paddle] checkout.error event:', event.data);
         }
       },
     });
