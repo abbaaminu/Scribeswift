@@ -1,4 +1,3 @@
-cat > src/App.tsx << 'SCRIBESWIFT_EOF'
 import React, { useState, useEffect } from 'react';
 import { Header } from './components/Header';
 import { FileUpload } from './components/FileUpload';
@@ -321,4 +320,3 @@ export default function App() {
     </div>
   );
 }
-SCRIBESWIFT_EOF
