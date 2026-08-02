@@ -1,3 +1,4 @@
+cat > src/App.tsx << 'SCRIBESWIFT_EOF'
 import React, { useState, useEffect } from 'react';
 import { Header } from './components/Header';
 import { FileUpload } from './components/FileUpload';
@@ -14,7 +15,6 @@ import { supabase, fetchUserProfile, isSupabaseConfigured } from './lib/supabase
 import { CONTACT_EMAIL } from './utils/constants';
 
 export default function App() {
-  // Supabase Auth & User Tier State
   const [user, setUser] = useState<SupabaseUser | null>(null);
 
   const [tier, setTier] = useState<SubscriptionTier>(() => {
@@ -40,11 +40,9 @@ export default function App() {
     type?: 'lock' | 'success' | 'info' | 'error';
   } | null>(null);
 
-  // Initialize Supabase Auth session & onAuthStateChange listener
   useEffect(() => {
     if (!isSupabaseConfigured) return;
 
-    // Check existing active session
     supabase.auth.getSession().then(({ data: { session } }) => {
       const currentUser = session?.user ?? null;
       setUser(currentUser);
@@ -54,7 +52,6 @@ export default function App() {
       }
     });
 
-    // Listen for real-time auth changes (Sign in, OAuth callback, Sign out)
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (_event, session) => {
@@ -72,7 +69,6 @@ export default function App() {
     return () => subscription.unsubscribe();
   }, []);
 
-  // Fetch is_premium status from Supabase `profiles` table where id = user.id
   const syncProfileTier = async (userId: string) => {
     const profile = await fetchUserProfile(userId);
     if (profile && typeof profile.is_premium === 'boolean') {
@@ -81,7 +77,6 @@ export default function App() {
     }
   };
 
-  // Sync tier & history with localStorage
   useEffect(() => {
     localStorage.setItem('scribeswift_tier', tier);
   }, [tier]);
@@ -102,7 +97,7 @@ export default function App() {
   const handleSubscribeSuccess = () => {
     setTier('premium');
     setToast({
-      message: '🎉 Congratulations! You are now subscribed to ScribeSwift Premium ($1/month). All copy, print, and export features unlocked!',
+      message: 'Congratulations! You are now subscribed to ScribeSwift Premium ($1/month). All copy, print, and export features unlocked!',
       type: 'success',
     });
   };
@@ -141,7 +136,6 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 font-sans flex flex-col selection:bg-indigo-500 selection:text-white">
-      {/* Navigation Header */}
       <Header
         tier={tier}
         user={user}
@@ -153,10 +147,8 @@ export default function App() {
         onToggleTier={handleToggleTier}
       />
 
-      {/* Main Body */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12">
         {activeTranscription ? (
-          /* Active Transcript View */
           <div className="space-y-6 animate-fadeIn">
             <button
               onClick={() => setActiveTranscription(null)}
@@ -175,9 +167,7 @@ export default function App() {
             />
           </div>
         ) : (
-          /* Landing & Upload View */
           <div className="space-y-12 animate-fadeIn">
-            {/* Hero Section */}
             <div className="text-center max-w-3xl mx-auto space-y-4">
               <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-300 text-xs font-semibold">
                 <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
@@ -193,11 +183,6 @@ export default function App() {
               </p>
             </div>
 
-            {/* Drag & Drop File Uploader — gated behind sign-in so first-time
-                visitors see only marketing info + a Sign In/Sign Up CTA.
-                Falls back to showing the tool directly if Supabase auth
-                isn't configured, so local/dev setups without auth keys
-                still work. */}
             {user || !isSupabaseConfigured ? (
               <FileUpload
                 onTranscriptionComplete={handleTranscriptionComplete}
@@ -212,7 +197,7 @@ export default function App() {
                   Sign in to start transcribing
                 </h2>
                 <p className="text-sm text-slate-400 max-w-md mx-auto">
-                  Create a free account to upload audio & video, keep your transcription
+                  Create a free account to upload audio and video, keep your transcription
                   history, and unlock the $1/mo Premium plan whenever you're ready.
                 </p>
                 <button
@@ -220,12 +205,11 @@ export default function App() {
                   className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-gradient-to-r from-indigo-500 to-purple-600 text-white font-bold text-sm hover:opacity-90 transition cursor-pointer"
                 >
                   <Sparkles className="w-4 h-4" />
-                  Sign In / Sign Up — It's Free
+                  Sign In / Sign Up - It's Free
                 </button>
               </div>
             )}
 
-            {/* Feature Value Grid */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-6 border-t border-slate-900">
               <div className="p-6 rounded-2xl bg-slate-900/40 border border-slate-800/80 space-y-2">
                 <div className="w-10 h-10 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 flex items-center justify-center mb-3">
@@ -261,12 +245,11 @@ export default function App() {
         )}
       </main>
 
-      {/* Footer */}
       <footer className="border-t border-slate-900 bg-slate-950 py-6 text-center text-xs text-slate-500">
         <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-3">
           <div className="flex flex-col sm:flex-row items-center gap-2 sm:gap-4">
             <span>ScribeSwift AI Engine</span>
-            <span className="hidden sm:inline text-slate-800">•</span>
+            <span className="hidden sm:inline text-slate-800">-</span>
             
               href={`mailto:${CONTACT_EMAIL}`}
               className="inline-flex items-center gap-1 text-indigo-400 hover:text-indigo-300 hover:underline"
@@ -297,7 +280,6 @@ export default function App() {
         </div>
       </footer>
 
-      {/* Modals & Drawers */}
       <ErrorBoundary fallbackTitle="Subscription Upgrade Notice" onReset={() => setIsUpgradeModalOpen(false)}>
         <SubscriptionModal
           isOpen={isUpgradeModalOpen}
@@ -328,7 +310,6 @@ export default function App() {
         onClearHistory={handleClearHistory}
       />
 
-      {/* Notifications Toast */}
       {toast && (
         <Toast
           message={toast.message}
@@ -340,3 +321,4 @@ export default function App() {
     </div>
   );
 }
+SCRIBESWIFT_EOF
