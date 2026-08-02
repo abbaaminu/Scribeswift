@@ -249,7 +249,7 @@ export default function App() {
           <div className="flex flex-col sm:flex-row items-center gap-2 sm:gap-4">
             <span>ScribeSwift AI Engine</span>
             <span className="hidden sm:inline text-slate-800">-</span>
-            
+            <a
               href={`mailto:${CONTACT_EMAIL}`}
               className="inline-flex items-center gap-1 text-indigo-400 hover:text-indigo-300 hover:underline"
             >
