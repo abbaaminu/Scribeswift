@@ -34,7 +34,7 @@ export const TranscriptView: React.FC<TranscriptViewProps> = ({
   onLockedActionClick,
   onCopySuccess,
 }) => {
-  const [activeTab, setActiveTab] = useState<'transcript' | 'summary' | 'actionItems'>('transcript');
+  const [activeTab, setActiveTab] = useState<'transcript' | 'plainText' | 'summary' | 'actionItems'>('transcript');
   const [searchQuery, setSearchQuery] = useState('');
   const [currentTime, setCurrentTime] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -47,12 +47,10 @@ export const TranscriptView: React.FC<TranscriptViewProps> = ({
   const transcriptContainerRef = useRef<HTMLDivElement>(null);
   const isPremium = tier === 'premium';
 
-  // Update internal segments if data changes
   useEffect(() => {
     setSegments(data.segments);
   }, [data]);
 
-  // Client-Side Copy/Highlight Protections for Free Tier Users
   useEffect(() => {
     if (isPremium) return;
 
@@ -72,7 +70,6 @@ export const TranscriptView: React.FC<TranscriptViewProps> = ({
     };
 
     const handleContextMenu = (e: MouseEvent) => {
-      // Prevent right click copy option
       e.preventDefault();
       onLockedActionClick('Right Click Copy Menu');
     };
@@ -90,7 +87,6 @@ export const TranscriptView: React.FC<TranscriptViewProps> = ({
     };
   }, [isPremium, onLockedActionClick]);
 
-  // Jump to segment timestamp in audio/video player
   const handleJumpToTimestamp = (seconds: number) => {
     if (mediaRef.current) {
       mediaRef.current.currentTime = seconds;
@@ -107,7 +103,6 @@ export const TranscriptView: React.FC<TranscriptViewProps> = ({
     setEditingSpeakerId(null);
   };
 
-  // Filter segments by search query
   const filteredSegments = segments.filter(
     (seg) =>
       seg.text.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -116,7 +111,6 @@ export const TranscriptView: React.FC<TranscriptViewProps> = ({
 
   return (
     <div className="w-full max-w-5xl mx-auto space-y-6">
-      {/* Top Banner / Controls Row */}
       <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 sm:p-6 shadow-xl space-y-4">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-800">
           <div>
@@ -131,7 +125,6 @@ export const TranscriptView: React.FC<TranscriptViewProps> = ({
             <h2 className="text-xl sm:text-2xl font-bold text-white mt-1.5">{data.title}</h2>
           </div>
 
-          {/* Export Menu */}
           <ExportMenu
             data={{ ...data, segments }}
             tier={tier}
@@ -140,7 +133,6 @@ export const TranscriptView: React.FC<TranscriptViewProps> = ({
           />
         </div>
 
-        {/* Media Player (If media URL available or HTML5 audio fallback) */}
         {data.mediaUrl ? (
           <div className="bg-slate-950 rounded-xl p-3 border border-slate-800/80">
             {data.fileType.startsWith('video/') ? (
@@ -182,7 +174,6 @@ export const TranscriptView: React.FC<TranscriptViewProps> = ({
                   />
                 </div>
 
-                {/* Speed Controls */}
                 <select
                   value={playbackSpeed}
                   onChange={(e) => {
@@ -211,7 +202,6 @@ export const TranscriptView: React.FC<TranscriptViewProps> = ({
           </div>
         )}
 
-        {/* Free Plan Lock Indicator Warning Banner */}
         {!isPremium && (
           <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs text-amber-200">
             <div className="flex items-center gap-2">
@@ -230,7 +220,6 @@ export const TranscriptView: React.FC<TranscriptViewProps> = ({
         )}
       </div>
 
-      {/* Tabs Row */}
       <div className="flex items-center justify-between border-b border-slate-800 pb-2">
         <div className="flex items-center gap-2">
           <button
@@ -243,6 +232,18 @@ export const TranscriptView: React.FC<TranscriptViewProps> = ({
           >
             <FileText className="w-4 h-4" />
             <span>Full Transcript</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('plainText')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition ${
+              activeTab === 'plainText'
+                ? 'bg-indigo-600 text-white shadow-md'
+                : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+            }`}
+          >
+            <Layers className="w-4 h-4 text-sky-300" />
+            <span>Plain Text</span>
           </button>
 
           <button
@@ -270,7 +271,6 @@ export const TranscriptView: React.FC<TranscriptViewProps> = ({
           </button>
         </div>
 
-        {/* Search Input for Transcript */}
         {activeTab === 'transcript' && (
           <div className="relative hidden sm:block w-64">
             <Search className="w-4 h-4 text-slate-500 absolute left-3 top-2.5" />
@@ -285,7 +285,6 @@ export const TranscriptView: React.FC<TranscriptViewProps> = ({
         )}
       </div>
 
-      {/* Main Tab Content Display */}
       {activeTab === 'transcript' && (
         <div
           ref={transcriptContainerRef}
@@ -294,7 +293,6 @@ export const TranscriptView: React.FC<TranscriptViewProps> = ({
           }`}
           style={!isPremium ? { WebkitUserSelect: 'none', userSelect: 'none' } : {}}
         >
-          {/* Mobile Search */}
           <div className="block sm:hidden mb-4">
             <div className="relative w-full">
               <Search className="w-4 h-4 text-slate-500 absolute left-3 top-2.5" />
@@ -326,7 +324,6 @@ export const TranscriptView: React.FC<TranscriptViewProps> = ({
                   }`}
                 >
                   <div className="flex items-center justify-between mb-2">
-                    {/* Timestamp Tag */}
                     <button
                       onClick={() => handleJumpToTimestamp(seg.startTime)}
                       className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 text-xs font-mono font-medium transition cursor-pointer"
@@ -336,7 +333,6 @@ export const TranscriptView: React.FC<TranscriptViewProps> = ({
                       <span>{seg.timestamp}</span>
                     </button>
 
-                    {/* Speaker Tag / Speaker Rename */}
                     {editingSpeakerId === seg.speaker ? (
                       <div className="flex items-center gap-1.5">
                         <input
@@ -369,7 +365,6 @@ export const TranscriptView: React.FC<TranscriptViewProps> = ({
                     )}
                   </div>
 
-                  {/* Segment Text */}
                   <p className="text-sm text-slate-200 leading-relaxed font-normal">
                     {seg.text}
                   </p>
@@ -380,7 +375,26 @@ export const TranscriptView: React.FC<TranscriptViewProps> = ({
         </div>
       )}
 
-      {/* AI Summary Tab */}
+      {activeTab === 'plainText' && (
+        <div
+          ref={transcriptContainerRef}
+          className={`bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl ${
+            !isPremium ? 'select-none pointer-events-auto' : 'select-text'
+          }`}
+          style={!isPremium ? { WebkitUserSelect: 'none', userSelect: 'none' } : {}}
+        >
+          {data.fullText ? (
+            <p className="text-sm text-slate-200 leading-relaxed whitespace-pre-wrap">
+              {data.fullText}
+            </p>
+          ) : (
+            <div className="text-center py-12 text-slate-500 text-sm">
+              No transcript text available.
+            </div>
+          )}
+        </div>
+      )}
+
       {activeTab === 'summary' && (
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-6">
           <div className="space-y-2">
@@ -393,7 +407,6 @@ export const TranscriptView: React.FC<TranscriptViewProps> = ({
             </p>
           </div>
 
-          {/* Key Takeaways */}
           {data.summary?.keyPoints && data.summary.keyPoints.length > 0 && (
             <div className="space-y-3">
               <h4 className="text-sm font-bold text-slate-200 uppercase tracking-wider">
@@ -415,7 +428,6 @@ export const TranscriptView: React.FC<TranscriptViewProps> = ({
             </div>
           )}
 
-          {/* Keywords */}
           {data.summary?.keywords && data.summary.keywords.length > 0 && (
             <div className="space-y-2">
               <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">
@@ -436,7 +448,6 @@ export const TranscriptView: React.FC<TranscriptViewProps> = ({
         </div>
       )}
 
-      {/* Action Items Tab */}
       {activeTab === 'actionItems' && (
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
           <h3 className="text-lg font-bold text-white flex items-center gap-2">
