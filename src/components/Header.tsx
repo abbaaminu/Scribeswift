@@ -44,10 +44,11 @@ export const Header: React.FC<HeaderProps> = ({
         {/* Brand Logo */}
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-600 via-purple-600 to-pink-500 p-0.5 shadow-lg shadow-indigo-500/20 flex items-center justify-center">
-            <div className="w-full h-full bg-slate-950 rounded-[10px] flex items-center justify-center">
-              <Zap className="w-5 h-5 text-indigo-400 fill-indigo-400/20" />
-            </div>
-          </div>
+            <img
+             src="/logo.png"
+             alt="ScribeSwift"
+             className="w-10 h-10 rounded-xl shadow-lg shadow-indigo-500/20 flex-shrink-0"
+           />
           <div>
             <div className="flex items-center gap-2">
               <span className="font-bold text-xl tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-white via-indigo-100 to-indigo-300">
