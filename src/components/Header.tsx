@@ -4,7 +4,6 @@ import {
   Crown,
   ShieldCheck,
   History,
-  Zap,
   Lock,
   User,
   LogOut,
@@ -13,7 +12,7 @@ import {
 } from 'lucide-react';
 import { SubscriptionTier } from '../types';
 import { User as SupabaseUser } from '@supabase/supabase-js';
-
+ 
 interface HeaderProps {
   tier: SubscriptionTier;
   user: SupabaseUser | null;
@@ -24,7 +23,7 @@ interface HeaderProps {
   historyCount: number;
   onToggleTier: () => void;
 }
-
+ 
 export const Header: React.FC<HeaderProps> = ({
   tier,
   user,
@@ -37,17 +36,16 @@ export const Header: React.FC<HeaderProps> = ({
 }) => {
   const [isUserDropdownOpen, setIsUserDropdownOpen] = useState(false);
   const isPremium = tier === 'premium';
-
+ 
   return (
     <header className="sticky top-0 z-30 bg-slate-900/90 backdrop-blur-md border-b border-slate-800 text-slate-100 shadow-md">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-        {/* Brand Logo */}
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-600 via-purple-600 to-pink-500 p-0.5 shadow-lg shadow-indigo-500/20 flex items-center justify-center">
-            <div className="w-full h-full bg-slate-950 rounded-[10px] flex items-center justify-center">
-              <Zap className="w-5 h-5 text-indigo-400 fill-indigo-400/20" />
-            </div>
-          </div>
+          <img
+            src="/logo.png"
+            alt="ScribeSwift"
+            className="w-10 h-10 rounded-xl shadow-lg shadow-indigo-500/20 flex-shrink-0"
+          />
           <div>
             <div className="flex items-center gap-2">
               <span className="font-bold text-xl tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-white via-indigo-100 to-indigo-300">
@@ -60,10 +58,8 @@ export const Header: React.FC<HeaderProps> = ({
             <p className="text-xs text-slate-400 hidden sm:block">AI Audio & Video Transcription Engine</p>
           </div>
         </div>
-
-        {/* Right Action Controls */}
+ 
         <div className="flex items-center gap-2 sm:gap-3">
-          {/* Quick Demo Tier Switcher (dev-only — bypasses payment, must never ship to production) */}
           {!(import.meta as any).env?.PROD && (
             <button
               onClick={onToggleTier}
@@ -76,8 +72,7 @@ export const Header: React.FC<HeaderProps> = ({
               </span>
             </button>
           )}
-
-          {/* User Tier Status Badge & Upgrade Button — hidden until signed in */}
+ 
           {user && (isPremium ? (
             <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs font-medium shadow-sm">
               <ShieldCheck className="w-4 h-4 text-emerald-400" />
@@ -93,8 +88,7 @@ export const Header: React.FC<HeaderProps> = ({
               <span className="bg-white/20 text-white text-[10px] px-1.5 py-0.2 rounded-full font-bold">$1/mo</span>
             </button>
           ))}
-
-          {/* Supabase User Auth State / Menu */}
+ 
           {user ? (
             <div className="relative">
               <button
@@ -118,7 +112,7 @@ export const Header: React.FC<HeaderProps> = ({
                 </span>
                 <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform ${isUserDropdownOpen ? 'rotate-180' : ''}`} />
               </button>
-
+ 
               {isUserDropdownOpen && (
                 <div className="absolute right-0 mt-2 w-56 bg-slate-900 border border-slate-800 rounded-xl shadow-2xl z-50 py-2 animate-fadeIn text-slate-200">
                   <div className="px-3.5 py-2 border-b border-slate-800 space-y-0.5">
@@ -130,7 +124,7 @@ export const Header: React.FC<HeaderProps> = ({
                       </span>
                     </div>
                   </div>
-
+ 
                   {!isPremium && (
                     <button
                       onClick={() => {
@@ -143,7 +137,7 @@ export const Header: React.FC<HeaderProps> = ({
                       <span>Upgrade Account ($1/mo)</span>
                     </button>
                   )}
-
+ 
                   <button
                     onClick={() => {
                       setIsUserDropdownOpen(false);
@@ -166,8 +160,7 @@ export const Header: React.FC<HeaderProps> = ({
               <span>Sign In / Sign Up</span>
             </button>
           )}
-
-          {/* History Button — hidden until signed in */}
+ 
           {user && (
             <button
               onClick={onToggleHistory}
