@@ -25,6 +25,11 @@ const GROQ_MAX_UPLOAD_BYTES = 24 * 1024 * 1024;
 // safely under GROQ_MAX_UPLOAD_BYTES with headroom for container overhead.
 const CHUNK_DURATION_SECONDS = 40 * 60;
 
+// Helper function to generate UUID v4 for transcription IDs
+const generateUUID = (): string => {
+  return crypto.randomUUID();
+};
+
 // Maps the language options exposed in the UI to ISO-639-1 codes that the
 // Groq Whisper endpoint uses to improve accuracy/latency. "Auto-detect"
 // intentionally omits the language param so Whisper detects it itself.
@@ -416,7 +421,7 @@ The "speakers" array MUST have exactly ${segments.length} entries, one per segme
     const sampleType = (req.query.type as string) || 'keynote';
     if (sampleType === 'podcast') {
       return res.json({
-        id: 'sample-podcast-001',
+        id: generateUUID(),
         title: 'Tech Talk Daily - AI Innovations in 2026',
         fileName: 'tech_talk_daily_ep42.mp3',
         fileSize: 18450000,
@@ -427,7 +432,7 @@ The "speakers" array MUST have exactly ${segments.length} entries, one per segme
         language: 'English (US)',
         segments: [
           {
-            id: 'seg-1',
+            id: generateUUID(),
             startTime: 0,
             endTime: 12,
             timestamp: '00:00',
@@ -435,7 +440,7 @@ The "speakers" array MUST have exactly ${segments.length} entries, one per segme
             text: "Welcome back to Tech Talk Daily! Today we're diving deep into the massive shifts in artificial intelligence, multimodal models, and how on-device acceleration is reshaping software engineering.",
           },
           {
-            id: 'seg-2',
+            id: generateUUID(),
             startTime: 12,
             endTime: 22,
             timestamp: '00:12',
@@ -443,7 +448,7 @@ The "speakers" array MUST have exactly ${segments.length} entries, one per segme
             text: "I'm your host Alex, and today with me is Dr. Elena Rostova, lead AI Researcher. Dr. Elena, welcome to the show!",
           },
           {
-            id: 'seg-3',
+            id: generateUUID(),
             startTime: 22,
             endTime: 38,
             timestamp: '00:22',
@@ -451,7 +456,7 @@ The "speakers" array MUST have exactly ${segments.length} entries, one per segme
             text: 'Thanks Alex, excited to be here. The jump from standard text models to native real-time audio and video processing has been remarkable.',
           },
           {
-            id: 'seg-4',
+            id: generateUUID(),
             startTime: 38,
             endTime: 65,
             timestamp: '00:38',
@@ -479,7 +484,7 @@ The "speakers" array MUST have exactly ${segments.length} entries, one per segme
 
     // Default Keynote Sample
     res.json({
-      id: 'sample-keynote-002',
+      id: generateUUID(),
       title: 'ScribeSwift Product Launch Keynote',
       fileName: 'scribeswift_launch_presentation.mp4',
       fileSize: 48200000,
@@ -490,7 +495,7 @@ The "speakers" array MUST have exactly ${segments.length} entries, one per segme
       language: 'English (US)',
       segments: [
         {
-          id: 'k-1',
+          id: generateUUID(),
           startTime: 0,
           endTime: 15,
           timestamp: '00:00',
@@ -498,7 +503,7 @@ The "speakers" array MUST have exactly ${segments.length} entries, one per segme
           text: 'Good morning everyone! Today, we are thrilled to introduce the newly upgraded ScribeSwift engine.',
         },
         {
-          id: 'k-2',
+          id: generateUUID(),
           startTime: 15,
           endTime: 35,
           timestamp: '00:15',
@@ -506,7 +511,7 @@ The "speakers" array MUST have exactly ${segments.length} entries, one per segme
           text: 'We heard your feedback loud and clear: 20MB limits were not enough for high-definition video files, webinars, and full podcast episodes.',
         },
         {
-          id: 'k-3',
+          id: generateUUID(),
           startTime: 35,
           endTime: 60,
           timestamp: '00:35',
@@ -514,7 +519,7 @@ The "speakers" array MUST have exactly ${segments.length} entries, one per segme
           text: 'Today, we are officially boosting file upload capacity up to 100MB.',
         },
         {
-          id: 'k-4',
+          id: generateUUID(),
           startTime: 60,
           endTime: 95,
           timestamp: '01:00',
@@ -522,7 +527,7 @@ The "speakers" array MUST have exactly ${segments.length} entries, one per segme
           text: 'With ScribeSwift, you can now upload full video lectures, multi-hour meetings, and high-fidelity audio tracks without tedious compression.',
         },
         {
-          id: 'k-5',
+          id: generateUUID(),
           startTime: 95,
           endTime: 130,
           timestamp: '01:35',
@@ -647,7 +652,7 @@ The "speakers" array MUST have exactly ${segments.length} entries, one per segme
       };
 
       const formattedSegments = rawSegments.map((seg, idx) => ({
-        id: `seg-${Date.now()}-${idx}`,
+        id: generateUUID(),
         startTime: seg.startTime,
         endTime: seg.endTime,
         timestamp: formatTimestamp(seg.startTime),
@@ -656,7 +661,7 @@ The "speakers" array MUST have exactly ${segments.length} entries, one per segme
       }));
 
       const transcriptionResult = {
-        id: `transcription-${Date.now()}`,
+        id: generateUUID(),
         title: req.file.originalname.replace(/\.[^/.]+$/, ''),
         fileName: req.file.originalname,
         fileSize: req.file.size,
