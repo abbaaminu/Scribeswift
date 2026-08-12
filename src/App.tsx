@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Header } from './components/Header';
 import { FileUpload } from './components/FileUpload';
 import { TranscriptView } from './components/TranscriptView';
@@ -39,19 +39,26 @@ export default function App() {
     type?: 'lock' | 'success' | 'info' | 'error';
   } | null>(null);
 
+  const syncedUserIdRef = useRef<string | null>(null);
+
   useEffect(() => {
     if (!isSupabaseConfigured) return;
 
     supabase.auth.getSession().then(({ data: { session } }) => {
       const currentUser = session?.user ?? null;
       setUser(currentUser);
-      if (currentUser) {
+      if (currentUser && syncedUserIdRef.current !== currentUser.id) {
+        syncedUserIdRef.current = currentUser.id;
         setIsAuthModalOpen(false);
         syncProfileTier(currentUser.id);
         syncHistoryForUser(currentUser.id);
       }
     });
 
+    // We only want to (re)fetch profile/history on an actual new sign-in —
+    // re-syncing on every background token refresh would overwrite
+    // locally-added history with a possibly-stale Supabase read while a
+    // save is still in flight.
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (_event, session) => {
@@ -59,9 +66,13 @@ export default function App() {
       setUser(currentUser);
       if (currentUser) {
         setIsAuthModalOpen(false);
-        await syncProfileTier(currentUser.id);
-        await syncHistoryForUser(currentUser.id);
+        if (syncedUserIdRef.current !== currentUser.id) {
+          syncedUserIdRef.current = currentUser.id;
+          await syncProfileTier(currentUser.id);
+          await syncHistoryForUser(currentUser.id);
+        }
       } else {
+        syncedUserIdRef.current = null;
         const savedTier = (localStorage.getItem('scribeswift_tier') as SubscriptionTier) || 'free';
         setTier(savedTier);
         setHistory([]);
