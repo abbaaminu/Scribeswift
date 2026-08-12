@@ -224,7 +224,6 @@ export async function saveTranscriptionToHistory(userId: string, item: Transcrip
         segments: item.segments,
         summary: item.summary,
         created_at: item.createdAt,
-        updated_at: new Date().toISOString(),
       }
     );
 
