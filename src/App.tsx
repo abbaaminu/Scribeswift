@@ -1,3 +1,4 @@
+cat > src/App.tsx << 'APP_EOF'
 import React, { useState, useEffect } from 'react';
 import { Header } from './components/Header';
 import { FileUpload } from './components/FileUpload';
@@ -10,7 +11,7 @@ import { Toast } from './components/Toast';
 import { SubscriptionTier, TranscriptionData } from './types';
 import { Sparkles, Shield, Zap, FileAudio, Lock, Crown, ArrowLeft, Mail } from 'lucide-react';
 import { User as SupabaseUser } from '@supabase/supabase-js';
-import { supabase, fetchUserProfile, isSupabaseConfigured } from './lib/supabase';
+import { supabase, fetchUserProfile, isSupabaseConfigured, fetchUserHistory, saveTranscriptionToHistory, clearUserHistory } from './lib/supabase';
 import { CONTACT_EMAIL } from './utils/constants';
 
 export default function App() {
@@ -48,6 +49,7 @@ export default function App() {
       if (currentUser) {
         setIsAuthModalOpen(false);
         syncProfileTier(currentUser.id);
+        syncHistoryForUser(currentUser.id);
       }
     });
 
@@ -59,9 +61,11 @@ export default function App() {
       if (currentUser) {
         setIsAuthModalOpen(false);
         await syncProfileTier(currentUser.id);
+        await syncHistoryForUser(currentUser.id);
       } else {
         const savedTier = (localStorage.getItem('scribeswift_tier') as SubscriptionTier) || 'free';
         setTier(savedTier);
+        setHistory([]);
       }
     });
 
@@ -76,13 +80,43 @@ export default function App() {
     }
   };
 
+  // Load this account's transcription history from Supabase. If the account
+  // has no saved history yet but this browser has guest history sitting in
+  // localStorage, migrate it into the account once so nothing gets lost.
+  const syncHistoryForUser = async (userId: string) => {
+    const remoteHistory = await fetchUserHistory(userId);
+
+    if (remoteHistory.length === 0) {
+      let localHistory: TranscriptionData[] = [];
+      try {
+        const saved = localStorage.getItem('scribeswift_history');
+        localHistory = saved ? JSON.parse(saved) : [];
+      } catch (e) {
+        localHistory = [];
+      }
+
+      if (localHistory.length > 0) {
+        for (const item of localHistory) {
+          await saveTranscriptionToHistory(userId, item);
+        }
+        setHistory(localHistory);
+        localStorage.removeItem('scribeswift_history');
+        return;
+      }
+    }
+
+    setHistory(remoteHistory);
+  };
+
   useEffect(() => {
     localStorage.setItem('scribeswift_tier', tier);
   }, [tier]);
 
   useEffect(() => {
-    localStorage.setItem('scribeswift_history', JSON.stringify(history));
-  }, [history]);
+    if (!user) {
+      localStorage.setItem('scribeswift_history', JSON.stringify(history));
+    }
+  }, [history, user]);
 
   const handleToggleTier = () => {
     const newTier: SubscriptionTier = tier === 'free' ? 'premium' : 'free';
@@ -121,15 +155,22 @@ export default function App() {
   const handleTranscriptionComplete = (data: TranscriptionData) => {
     setActiveTranscription(data);
     setHistory((prev) => [data, ...prev.filter((h) => h.id !== data.id)]);
+    if (user) {
+      saveTranscriptionToHistory(user.id, data);
+    }
     setToast({
       message: `Transcription complete for "${data.title}"!`,
       type: 'success',
     });
   };
 
-  const handleClearHistory = () => {
+  const handleClearHistory = async () => {
+    if (user) {
+      await clearUserHistory(user.id);
+    } else {
+      localStorage.removeItem('scribeswift_history');
+    }
     setHistory([]);
-    localStorage.removeItem('scribeswift_history');
     setToast({ message: 'Transcription history cleared.', type: 'info' });
   };
 
@@ -320,3 +361,4 @@ export default function App() {
     </div>
   );
 }
+APP_EOF
