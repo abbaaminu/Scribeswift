@@ -1,4 +1,3 @@
-cat > src/lib/supabase.ts << 'SUPABASE_EOF'
 import { createClient } from '@supabase/supabase-js';
 import { TranscriptionData } from '../types';
  
@@ -228,4 +227,3 @@ export async function clearUserHistory(userId: string): Promise<boolean> {
     return false;
   }
 }
-SUPABASE_EOF

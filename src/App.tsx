@@ -1,4 +1,3 @@
-cat > src/App.tsx << 'APP_EOF'
 import React, { useState, useEffect } from 'react';
 import { Header } from './components/Header';
 import { FileUpload } from './components/FileUpload';
@@ -361,4 +360,3 @@ export default function App() {
     </div>
   );
 }
-APP_EOF
