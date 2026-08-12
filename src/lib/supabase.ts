@@ -224,8 +224,8 @@ export async function saveTranscriptionToHistory(userId: string, item: Transcrip
         segments: item.segments,
         summary: item.summary,
         created_at: item.createdAt,
-      },
-      { onConflict: 'user_id,id' }
+        updated_at: new Date().toISOString(),
+      }
     );
 
     if (error) {

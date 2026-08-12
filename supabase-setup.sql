@@ -105,7 +105,32 @@ CREATE POLICY "Users can delete their own transcriptions" ON transcriptions
   FOR DELETE USING (auth.uid() = user_id);
 
 -- ============================================================================
--- 4. Auto-create Profile on User Signup (Trigger)
+-- 4. Auto-Update updated_at Timestamp (Trigger)
+-- ============================================================================
+
+-- Function to automatically update updated_at timestamp
+CREATE OR REPLACE FUNCTION public.update_updated_at_column()
+RETURNS TRIGGER AS $$
+BEGIN
+  NEW.updated_at = NOW();
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Trigger for transcriptions table
+DROP TRIGGER IF EXISTS update_transcriptions_updated_at ON transcriptions;
+CREATE TRIGGER update_transcriptions_updated_at
+  BEFORE UPDATE ON transcriptions
+  FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+-- Trigger for profiles table
+DROP TRIGGER IF EXISTS update_profiles_updated_at ON profiles;
+CREATE TRIGGER update_profiles_updated_at
+  BEFORE UPDATE ON profiles
+  FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+-- ============================================================================
+-- 5. Auto-create Profile on User Signup (Trigger)
 -- ============================================================================
 
 -- Function to create a profile when a new user signs up
