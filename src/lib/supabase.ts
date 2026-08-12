@@ -57,6 +57,15 @@ const createSafeSupabaseClient = () => {
 };
  
 export const supabase = createSafeSupabaseClient();
+
+// Log startup status
+if (typeof window !== 'undefined') {
+  if (isSupabaseConfigured) {
+    console.log('[Supabase] ✓ Successfully configured. History will be saved to Supabase.');
+  } else {
+    console.warn('[Supabase] ✗ Not configured. History will only be saved locally. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to enable cross-device sync.');
+  }
+}
  
 export interface SupabaseProfile {
   id: string;
@@ -72,20 +81,28 @@ export interface SupabaseProfile {
 */
 export async function fetchUserProfile(userId: string): Promise<SupabaseProfile | null> {
   if (!isSupabaseConfigured) return null;
- 
+
   try {
     const { data, error } = await supabase
       .from('profiles')
       .select('id, is_premium, email, full_name, avatar_url')
       .eq('id', userId)
       .maybeSingle();
- 
+
     if (error && error.code !== 'PGRST116') {
-      console.warn('Supabase profile fetch notice:', error.message);
+      console.error('[Profile] Error fetching profile:', error.code, error.message);
+      if (error.code === '42P01') {
+        console.error('[Profile] ✗ CRITICAL: "profiles" table does not exist. Run supabase-setup.sql in your Supabase project.');
+      }
     }
+    
+    if (data) {
+      console.log(`[Profile] ✓ Loaded profile for user (tier: ${data.is_premium ? 'premium' : 'free'})`);
+    }
+    
     return data as SupabaseProfile | null;
   } catch (err) {
-    console.warn('Error querying Supabase profiles table:', err);
+    console.error('[Profile] Exception fetching profile:', err);
     return null;
   }
 }
@@ -95,7 +112,7 @@ export async function fetchUserProfile(userId: string): Promise<SupabaseProfile 
 */
 export async function updateUserPremiumStatus(userId: string, isPremium: boolean, userEmail?: string): Promise<boolean> {
   if (!isSupabaseConfigured) return false;
- 
+
   try {
     const { error } = await supabase.from('profiles').upsert(
       {
@@ -106,14 +123,18 @@ export async function updateUserPremiumStatus(userId: string, isPremium: boolean
       },
       { onConflict: 'id' }
     );
- 
+
     if (error) {
-      console.warn('Supabase profile update warning:', error.message);
+      console.error('[Profile] Error updating premium status:', error.code, error.message);
+      if (error.code === '42P01') {
+        console.error('[Profile] ✗ CRITICAL: "profiles" table does not exist. Run supabase-setup.sql in your Supabase project.');
+      }
       return false;
     }
+    console.log(`[Profile] ✓ Updated user tier: ${isPremium ? 'premium' : 'free'}`);
     return true;
   } catch (err) {
-    console.warn('Failed to update user premium status in Supabase:', err);
+    console.error('[Profile] Exception updating premium status:', err);
     return false;
   }
 }
@@ -153,22 +174,28 @@ const rowToTranscription = (row: TranscriptionRow): TranscriptionData => ({
 * Fetch a user's saved transcription history from Supabase, newest first.
 */
 export async function fetchUserHistory(userId: string): Promise<TranscriptionData[]> {
-  if (!isSupabaseConfigured) return [];
- 
+  if (!isSupabaseConfigured) {
+    console.log('[History] Supabase not configured, returning empty history');
+    return [];
+  }
+
   try {
     const { data, error } = await supabase
       .from('transcriptions')
       .select('*')
       .eq('user_id', userId)
       .order('created_at', { ascending: false });
- 
+
     if (error) {
-      console.warn('Supabase history fetch notice:', error.message);
+      console.error('[History] Error fetching history:', error.code, error.message);
       return [];
     }
+    
+    const historyCount = (data as TranscriptionRow[] || []).length;
+    console.log(`[History] Loaded ${historyCount} transcriptions from Supabase`);
     return (data as TranscriptionRow[] || []).map(rowToTranscription);
   } catch (err) {
-    console.warn('Error querying Supabase transcriptions table:', err);
+    console.error('[History] Exception fetching from Supabase:', err);
     return [];
   }
 }
@@ -177,8 +204,11 @@ export async function fetchUserHistory(userId: string): Promise<TranscriptionDat
 * Save (or overwrite) one transcription in a user's history.
 */
 export async function saveTranscriptionToHistory(userId: string, item: TranscriptionData): Promise<boolean> {
-  if (!isSupabaseConfigured) return false;
- 
+  if (!isSupabaseConfigured) {
+    console.log('[History] Supabase not configured, not saving to remote');
+    return false;
+  }
+
   try {
     const { error } = await supabase.from('transcriptions').upsert(
       {
@@ -197,14 +227,22 @@ export async function saveTranscriptionToHistory(userId: string, item: Transcrip
       },
       { onConflict: 'user_id,id' }
     );
- 
+
     if (error) {
-      console.warn('Supabase history save warning:', error.message);
+      console.error('[History] Error saving transcription:', error.code, error.message);
+      if (error.code === '42P01') {
+        console.error('[History] ✗ CRITICAL: "transcriptions" table does not exist. Run supabase-setup.sql in your Supabase project.');
+      }
+      if (error.code === '42501') {
+        console.error('[History] ✗ CRITICAL: Row Level Security (RLS) policy error. Check that RLS policies are correctly configured.');
+      }
       return false;
     }
+    
+    console.log(`[History] ✓ Saved: "${item.title}"`);
     return true;
   } catch (err) {
-    console.warn('Failed to save transcription to Supabase history:', err);
+    console.error('[History] Exception saving to Supabase:', err);
     return false;
   }
 }
@@ -214,16 +252,17 @@ export async function saveTranscriptionToHistory(userId: string, item: Transcrip
 */
 export async function clearUserHistory(userId: string): Promise<boolean> {
   if (!isSupabaseConfigured) return false;
- 
+
   try {
     const { error } = await supabase.from('transcriptions').delete().eq('user_id', userId);
     if (error) {
-      console.warn('Supabase history clear warning:', error.message);
+      console.error('[History] Error clearing history:', error.message);
       return false;
     }
+    console.log('[History] ✓ Cleared all transcriptions for user');
     return true;
   } catch (err) {
-    console.warn('Failed to clear Supabase history:', err);
+    console.error('[History] Exception clearing history:', err);
     return false;
   }
 }

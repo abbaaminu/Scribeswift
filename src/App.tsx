@@ -10,7 +10,7 @@ import { Toast } from './components/Toast';
 import { SubscriptionTier, TranscriptionData } from './types';
 import { Sparkles, Shield, Zap, FileAudio, Lock, Crown, ArrowLeft, Mail } from 'lucide-react';
 import { User as SupabaseUser } from '@supabase/supabase-js';
-import { supabase, fetchUserProfile, isSupabaseConfigured, fetchUserHistory, saveTranscriptionToHistory, clearUserHistory } from './lib/supabase';
+import { supabase, fetchUserProfile, isSupabaseConfigured, fetchUserHistory, saveTranscriptionToHistory, clearUserHistory, updateUserPremiumStatus } from './lib/supabase';
 import { CONTACT_EMAIL } from './utils/constants';
 
 export default function App() {
@@ -128,17 +128,30 @@ export default function App() {
     }
   }, [history, user]);
 
-  const handleToggleTier = () => {
+  const handleToggleTier = async () => {
     const newTier: SubscriptionTier = tier === 'free' ? 'premium' : 'free';
     setTier(newTier);
+    
+    // If user is logged in, sync tier change to Supabase
+    if (user && isSupabaseConfigured) {
+      const isPremium = newTier === 'premium';
+      await updateUserPremiumStatus(user.id, isPremium, user.email);
+    }
+    
     setToast({
       message: `Tier switched to ${newTier === 'premium' ? 'Premium ($1/mo)' : 'Free Plan'}.`,
       type: newTier === 'premium' ? 'success' : 'info',
     });
   };
 
-  const handleSubscribeSuccess = () => {
+  const handleSubscribeSuccess = async () => {
     setTier('premium');
+    
+    // If user is logged in, sync premium status to Supabase
+    if (user && isSupabaseConfigured) {
+      await updateUserPremiumStatus(user.id, true, user.email);
+    }
+    
     setToast({
       message: 'Congratulations! You are now subscribed to ScribeSwift Premium ($1/month). All copy, print, and export features unlocked!',
       type: 'success',
