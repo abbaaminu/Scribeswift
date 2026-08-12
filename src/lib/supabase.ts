@@ -82,6 +82,13 @@ export interface SupabaseProfile {
 export async function fetchUserProfile(userId: string): Promise<SupabaseProfile | null> {
   if (!isSupabaseConfigured) return null;
 
+  // Validate userId is a valid UUID
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (!uuidRegex.test(userId)) {
+    console.error(`[Profile] ✗ CRITICAL: Invalid user ID format "${userId}". User may not be properly authenticated with Supabase.`);
+    return null;
+  }
+
   try {
     const { data, error } = await supabase
       .from('profiles')
@@ -113,15 +120,20 @@ export async function fetchUserProfile(userId: string): Promise<SupabaseProfile 
 export async function updateUserPremiumStatus(userId: string, isPremium: boolean, userEmail?: string): Promise<boolean> {
   if (!isSupabaseConfigured) return false;
 
+  // Validate userId is a valid UUID
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (!uuidRegex.test(userId)) {
+    console.error(`[Profile] ✗ CRITICAL: Invalid user ID format "${userId}". User may not be properly authenticated with Supabase.`);
+    return false;
+  }
+
   try {
     const { error } = await supabase.from('profiles').upsert(
       {
         id: userId,
         is_premium: isPremium,
         email: userEmail,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: 'id' }
+      }
     );
 
     if (error) {
@@ -179,6 +191,13 @@ export async function fetchUserHistory(userId: string): Promise<TranscriptionDat
     return [];
   }
 
+  // Validate userId is a valid UUID
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (!uuidRegex.test(userId)) {
+    console.error(`[History] ✗ CRITICAL: Invalid user ID format "${userId}". User may not be properly authenticated with Supabase.`);
+    return [];
+  }
+
   try {
     const { data, error } = await supabase
       .from('transcriptions')
@@ -209,6 +228,13 @@ export async function saveTranscriptionToHistory(userId: string, item: Transcrip
     return false;
   }
 
+  // Validate userId is a valid UUID (format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx)
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (!uuidRegex.test(userId)) {
+    console.error(`[History] ✗ CRITICAL: Invalid user ID format "${userId}". User may not be properly authenticated with Supabase.`);
+    return false;
+  }
+
   try {
     const { error } = await supabase.from('transcriptions').upsert(
       {
@@ -235,6 +261,9 @@ export async function saveTranscriptionToHistory(userId: string, item: Transcrip
       if (error.code === '42501') {
         console.error('[History] ✗ CRITICAL: Row Level Security (RLS) policy error. Check that RLS policies are correctly configured.');
       }
+      if (error.code === '22P02') {
+        console.error('[History] ✗ CRITICAL: Invalid UUID in user_id. User session may be corrupted.');
+      }
       return false;
     }
     
@@ -251,6 +280,13 @@ export async function saveTranscriptionToHistory(userId: string, item: Transcrip
 */
 export async function clearUserHistory(userId: string): Promise<boolean> {
   if (!isSupabaseConfigured) return false;
+
+  // Validate userId is a valid UUID
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (!uuidRegex.test(userId)) {
+    console.error(`[History] ✗ CRITICAL: Invalid user ID format "${userId}". User may not be properly authenticated with Supabase.`);
+    return false;
+  }
 
   try {
     const { error } = await supabase.from('transcriptions').delete().eq('user_id', userId);
