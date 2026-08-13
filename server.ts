@@ -59,6 +59,65 @@ const getSupabaseServerClient = () => {
   return createClient(supabaseUrl, supabaseKey);
 };
 
+// --- Monthly transcription caps (adjust these two numbers to retune) ------
+const FREE_MONTHLY_TRANSCRIPTION_LIMIT = 5;
+const PREMIUM_MONTHLY_TRANSCRIPTION_LIMIT = 100;
+
+const currentPeriod = () => {
+  const now = new Date();
+  return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`;
+};
+
+const verifyRequestUser = async (req) => {
+  const authHeader = req.headers['authorization'];
+  if (!authHeader || !authHeader.startsWith('Bearer ')) return null;
+  const token = authHeader.slice('Bearer '.length).trim();
+  if (!token) return null;
+  const supabase = getSupabaseServerClient();
+  if (!supabase) return null;
+  try {
+    const { data, error } = await supabase.auth.getUser(token);
+    if (error || !data?.user) return null;
+    return data.user.id;
+  } catch {
+    return null;
+  }
+};
+
+const checkUsageCap = async (userId) => {
+  const supabase = getSupabaseServerClient();
+  if (!supabase) return { allowed: true, limit: 0, used: 0 };
+  let isPremium = false;
+  try {
+    const { data: profile } = await supabase.from('profiles').select('is_premium').eq('id', userId).maybeSingle();
+    isPremium = Boolean(profile?.is_premium);
+  } catch {}
+  const limit = isPremium ? PREMIUM_MONTHLY_TRANSCRIPTION_LIMIT : FREE_MONTHLY_TRANSCRIPTION_LIMIT;
+  const period = currentPeriod();
+  try {
+    const { data: usage } = await supabase.from('usage_counters').select('transcription_count').eq('user_id', userId).eq('period', period).maybeSingle();
+    const used = usage?.transcription_count || 0;
+    return { allowed: used < limit, limit, used };
+  } catch {
+    return { allowed: true, limit, used: 0 };
+  }
+};
+
+const incrementUsage = async (userId) => {
+  const supabase = getSupabaseServerClient();
+  if (!supabase) return;
+  const period = currentPeriod();
+  try {
+    const { data: existing } = await supabase.from('usage_counters').select('transcription_count').eq('user_id', userId).eq('period', period).maybeSingle();
+    await supabase.from('usage_counters').upsert(
+      { user_id: userId, period, transcription_count: (existing?.transcription_count || 0) + 1, updated_at: new Date().toISOString() },
+      { onConflict: 'user_id,period' }
+    );
+  } catch (err) {
+    console.warn('[ScribeSwift] Failed to increment usage counter:', err);
+  }
+};
+
 // Ensure uploads directory exists
 const uploadsDir = path.join(process.cwd(), 'uploads');
 if (!fs.existsSync(uploadsDir)) {
@@ -577,6 +636,20 @@ The "speakers" array MUST have exactly ${segments.length} entries, one per segme
         return res.status(400).json({ error: 'File size exceeds maximum allowed capacity of 100MB.' });
       }
 
+      let authedUserId = null;
+      if (getSupabaseServerClient()) {
+        authedUserId = await verifyRequestUser(req);
+        if (!authedUserId) {
+          return res.status(401).json({ error: 'Please sign in to transcribe files.' });
+        }
+        const usage = await checkUsageCap(authedUserId);
+        if (!usage.allowed) {
+          return res.status(429).json({
+            error: `You've reached your monthly transcription limit (${usage.used}/${usage.limit}). Upgrade to Premium for a higher limit, or try again next month.`,
+          });
+        }
+      }
+
       const groq = getGroqClient();
       const targetLanguage = (req.body.language as string) || 'Auto-detect';
 
@@ -673,6 +746,10 @@ The "speakers" array MUST have exactly ${segments.length} entries, one per segme
         summary,
         createdAt: new Date().toISOString(),
       };
+
+      if (authedUserId) {
+        await incrementUsage(authedUserId);
+      }
 
       res.json(transcriptionResult);
     } catch (err: any) {

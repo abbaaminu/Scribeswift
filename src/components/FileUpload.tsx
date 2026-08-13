@@ -2,6 +2,7 @@ import React, { useState, useRef } from 'react';
 import { Upload, FileAudio, FileVideo, AlertTriangle, CheckCircle2, Sparkles, Music, Film, ArrowUpRight, Mail, AlertCircle, X } from 'lucide-react';
 import { TranscriptionData, UploadProgress } from '../types';
 import { CONTACT_EMAIL } from '../utils/constants';
+import { supabase, isSupabaseConfigured } from '../lib/supabase';
 
 interface FileUploadProps {
   onTranscriptionComplete: (data: TranscriptionData) => void;
@@ -29,7 +30,7 @@ export const FileUpload: React.FC<FileUploadProps> = ({
   };
 
   const MAX_SIZE_MB = 100;
-  const MAX_SIZE_BYTES = MAX_SIZE_MB * 1024 * 1024; // 100MB
+  const MAX_SIZE_BYTES = MAX_SIZE_MB * 1024 * 1024;
 
   const handleFileSelection = (file: File) => {
     setUploadError(null);
@@ -68,7 +69,7 @@ export const FileUpload: React.FC<FileUploadProps> = ({
     }
   };
 
-  const processFileUpload = (fileToUpload: File) => {
+  const processFileUpload = async (fileToUpload: File) => {
     setProgress({
       stage: 'uploading',
       percent: 0,
@@ -79,10 +80,20 @@ export const FileUpload: React.FC<FileUploadProps> = ({
     formData.append('file', fileToUpload);
     formData.append('language', selectedLanguage);
 
+    // Attach the signed-in user's access token so the server can identify
+    // the account and enforce their monthly transcription cap.
+    let accessToken: string | null = null;
+    if (isSupabaseConfigured) {
+      const { data } = await supabase.auth.getSession();
+      accessToken = data.session?.access_token || null;
+    }
+
     const xhr = new XMLHttpRequest();
     xhr.open('POST', '/api/transcribe', true);
+    if (accessToken) {
+      xhr.setRequestHeader('Authorization', `Bearer ${accessToken}`);
+    }
 
-    // Track real-time upload progress (0% - 100%)
     xhr.upload.onprogress = (event) => {
       if (event.lengthComputable) {
         const percentComplete = Math.round((event.loaded / event.total) * 100);
@@ -98,7 +109,6 @@ export const FileUpload: React.FC<FileUploadProps> = ({
       if (xhr.status >= 200 && xhr.status < 300) {
         try {
           const result: TranscriptionData = JSON.parse(xhr.responseText);
-          // Attach local media blob URL so player can play original audio/video file directly!
           const mediaBlobUrl = URL.createObjectURL(fileToUpload);
           result.mediaUrl = mediaBlobUrl;
 
@@ -133,7 +143,6 @@ export const FileUpload: React.FC<FileUploadProps> = ({
       setProgress({ stage: 'idle', percent: 0, message: '' });
     };
 
-    // Update message when upload finishes and server begins Whisper transcription
     xhr.upload.onload = () => {
       setProgress({
         stage: 'processing',
@@ -182,7 +191,6 @@ export const FileUpload: React.FC<FileUploadProps> = ({
 
   return (
     <div className="w-full max-w-4xl mx-auto space-y-6">
-      {/* Error Callout Banner */}
       {uploadError && (
         <div className="p-4 rounded-2xl bg-rose-950/80 border border-rose-500/50 text-rose-200 text-sm flex items-start justify-between gap-3 shadow-lg animate-fadeIn">
           <div className="flex items-start gap-2.5">
@@ -210,7 +218,6 @@ export const FileUpload: React.FC<FileUploadProps> = ({
         </div>
       )}
 
-      {/* Upload Box */}
       <div
         onDragEnter={handleDrag}
         onDragLeave={handleDrag}
@@ -233,7 +240,6 @@ export const FileUpload: React.FC<FileUploadProps> = ({
         />
 
         {isUploadingOrProcessing ? (
-          /* Processing State View */
           <div className="space-y-6 py-4 animate-fadeIn">
             <div className="relative w-20 h-20 mx-auto">
               <div className="absolute inset-0 rounded-full border-4 border-indigo-500/20 animate-ping" />
@@ -248,7 +254,6 @@ export const FileUpload: React.FC<FileUploadProps> = ({
                 Processing large media files with multi-speaker recognition
               </p>
 
-              {/* Progress Bar */}
               <div className="w-full bg-slate-950 rounded-full h-3 p-0.5 border border-slate-800 overflow-hidden shadow-inner mt-4">
                 <div
                   className="bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 h-full rounded-full transition-all duration-300"
@@ -262,7 +267,6 @@ export const FileUpload: React.FC<FileUploadProps> = ({
             </div>
           </div>
         ) : selectedFile ? (
-          /* File Selected View */
           <div className="space-y-6 py-2">
             <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-indigo-500/10 border border-indigo-500/30 text-indigo-400 mb-2">
               {selectedFile.type.startsWith('video/') ? (
@@ -281,7 +285,6 @@ export const FileUpload: React.FC<FileUploadProps> = ({
               </p>
             </div>
 
-            {/* Language Picker */}
             <div className="max-w-xs mx-auto flex items-center justify-center gap-2">
               <label className="text-xs font-semibold text-slate-400">Spoken Language:</label>
               <select
@@ -318,7 +321,6 @@ export const FileUpload: React.FC<FileUploadProps> = ({
             </div>
           </div>
         ) : (
-          /* Default File Drag & Drop Prompt */
           <div className="space-y-4">
             <div className="w-16 h-16 mx-auto rounded-2xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 flex items-center justify-center shadow-inner">
               <Upload className="w-8 h-8" />
@@ -350,7 +352,6 @@ export const FileUpload: React.FC<FileUploadProps> = ({
         )}
       </div>
 
-      {/* Instant Demo Samples Section */}
       <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-5">
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
@@ -363,7 +364,6 @@ export const FileUpload: React.FC<FileUploadProps> = ({
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          {/* Keynote Sample */}
           <button
             onClick={() => handleLoadSample('keynote')}
             disabled={isUploadingOrProcessing}
@@ -385,7 +385,6 @@ export const FileUpload: React.FC<FileUploadProps> = ({
             </div>
           </button>
 
-          {/* Podcast Sample */}
           <button
             onClick={() => handleLoadSample('podcast')}
             disabled={isUploadingOrProcessing}
