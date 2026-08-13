@@ -27,6 +27,16 @@ export const paddlePriceId =
   getEnvVar('VITE_PADDLE_PRICE_ID') ||
   '';
 
+export const paddleMonthlyPriceId =
+  getEnvVar('NEXT_PUBLIC_PADDLE_MONTHLY_PRICE_ID') ||
+  getEnvVar('VITE_PADDLE_MONTHLY_PRICE_ID') ||
+  paddlePriceId;
+
+export const paddleYearlyPriceId =
+  getEnvVar('NEXT_PUBLIC_PADDLE_YEARLY_PRICE_ID') ||
+  getEnvVar('VITE_PADDLE_YEARLY_PRICE_ID') ||
+  '';
+
 export const paddleEnvironment = (
   getEnvVar('NEXT_PUBLIC_PADDLE_ENV') ||
   getEnvVar('PADDLE_ENV') ||
@@ -86,6 +96,7 @@ export async function getPaddleInstance(): Promise<Paddle | undefined> {
 
 export interface OpenPaddleCheckoutOptions {
   priceId?: string;
+  billingPeriod?: 'monthly' | 'yearly';
   userId?: string;
   userEmail?: string;
   onSuccess?: () => void;
@@ -96,10 +107,13 @@ export interface OpenPaddleCheckoutOptions {
  * Open Paddle Checkout modal with customData containing userId
  */
 export async function openPaddleCheckout(options: OpenPaddleCheckoutOptions): Promise<boolean> {
-  const priceId = options.priceId || paddlePriceId;
+  const selectedPriceId =
+    options.priceId ||
+    (options.billingPeriod === 'yearly' ? paddleYearlyPriceId || paddleMonthlyPriceId : paddleMonthlyPriceId || paddlePriceId);
+
   const paddle = await getPaddleInstance();
 
-  if (!paddle || !priceId) {
+  if (!paddle || !selectedPriceId) {
     console.warn('[Paddle] Cannot open checkout: missing paddle instance or price ID.');
     return false;
   }
@@ -110,7 +124,7 @@ export async function openPaddleCheckout(options: OpenPaddleCheckoutOptions): Pr
     paddle.Checkout.open({
       items: [
         {
-          priceId: priceId,
+          priceId: selectedPriceId,
           quantity: 1,
         },
       ],

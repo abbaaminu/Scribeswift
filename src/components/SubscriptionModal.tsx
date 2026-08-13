@@ -3,8 +3,16 @@ import { X, Crown, Check, Shield, CreditCard, ArrowRight, Zap, Sparkles, Externa
 import confetti from 'canvas-confetti';
 import { User as SupabaseUser } from '@supabase/supabase-js';
 import { updateUserPremiumStatus } from '../lib/supabase';
-import { openPaddleCheckout, paddleClientToken, paddlePriceId } from '../lib/paddle';
-import { CONTACT_EMAIL, PREMIUM_PRICE_TEXT, PREMIUM_PRICE_VALUE } from '../utils/constants';
+import { openPaddleCheckout, paddleClientToken, paddlePriceId, paddleMonthlyPriceId, paddleYearlyPriceId } from '../lib/paddle';
+import {
+  CONTACT_EMAIL,
+  PREMIUM_MONTHLY_PRICE_USD,
+  PREMIUM_PRICE_TEXT,
+  PREMIUM_PRICE_VALUE,
+  PREMIUM_YEARLY_PRICE_TEXT,
+  PREMIUM_YEARLY_PRICE_USD,
+  PREMIUM_YEARLY_PRICE_VALUE,
+} from '../utils/constants';
 
 interface SubscriptionModalProps {
   isOpen: boolean;
@@ -21,13 +29,17 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
 }) => {
   const [loading, setLoading] = useState(false);
   const [paddleLoading, setPaddleLoading] = useState(false);
+  const [billingPeriod, setBillingPeriod] = useState<'monthly' | 'yearly'>('monthly');
   const [cardNumber, setCardNumber] = useState('');
   const [expDate, setExpDate] = useState('');
   const [cvc, setCvc] = useState('');
   const [name, setName] = useState('');
   const [statusNotice, setStatusNotice] = useState<string | null>(null);
 
-  const isPaddleConfigured = Boolean(paddleClientToken && paddlePriceId);
+  const isPaddleConfigured = Boolean(paddleClientToken && (paddleMonthlyPriceId || paddlePriceId));
+  const selectedPriceValue = billingPeriod === 'yearly' ? PREMIUM_YEARLY_PRICE_USD : PREMIUM_MONTHLY_PRICE_USD;
+  const selectedPriceLabel = billingPeriod === 'yearly' ? PREMIUM_YEARLY_PRICE_TEXT : PREMIUM_PRICE_TEXT;
+  const selectedPriceValueText = billingPeriod === 'yearly' ? PREMIUM_YEARLY_PRICE_VALUE : PREMIUM_PRICE_VALUE;
 
   React.useEffect(() => {
     if (isOpen && !isPaddleConfigured) {
@@ -51,6 +63,7 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
     const userEmail = user.email || undefined;
 
     const opened = await openPaddleCheckout({
+      billingPeriod,
       userId,
       userEmail,
       onSuccess: async () => {
@@ -144,11 +157,38 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
           </p>
 
           <div className="mt-4 flex items-baseline gap-2">
-            <span className="text-4xl font-extrabold text-white">{PREMIUM_PRICE_VALUE}</span>
-            <span className="text-slate-300 text-sm font-medium">/ month</span>
+            <span className="text-4xl font-extrabold text-white">{selectedPriceValueText}</span>
+            <span className="text-slate-300 text-sm font-medium">{billingPeriod === 'yearly' ? '/ year' : '/ month'}</span>
             <span className="ml-2 text-xs px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-semibold border border-emerald-500/30">
               Cancel anytime
             </span>
+          </div>
+
+          <div className="mt-4 grid grid-cols-2 gap-2 rounded-xl bg-slate-950/50 border border-slate-800 p-1">
+            <button
+              type="button"
+              onClick={() => setBillingPeriod('monthly')}
+              className={`px-3 py-2 rounded-lg text-xs font-semibold transition ${
+                billingPeriod === 'monthly'
+                  ? 'bg-indigo-600 text-white shadow-sm'
+                  : 'text-slate-300 hover:text-white hover:bg-slate-800'
+              }`}
+            >
+              Monthly<br />
+              <span className="text-[11px] opacity-80">$5/mo</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setBillingPeriod('yearly')}
+              className={`px-3 py-2 rounded-lg text-xs font-semibold transition ${
+                billingPeriod === 'yearly'
+                  ? 'bg-indigo-600 text-white shadow-sm'
+                  : 'text-slate-300 hover:text-white hover:bg-slate-800'
+              }`}
+            >
+              Yearly<br />
+              <span className="text-[11px] opacity-80">$55/yr</span>
+            </button>
           </div>
         </div>
 
@@ -172,7 +212,7 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
 
           <div className="bg-slate-950/60 border border-slate-800/80 rounded-xl p-4 space-y-2.5">
             <div className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">
-              Included in {PREMIUM_PRICE_TEXT} Premium Plan
+              Included in {selectedPriceLabel} Premium Plan
             </div>
 
             <div className="grid grid-cols-1 gap-2 text-xs sm:text-sm">
@@ -230,7 +270,7 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
               ) : (
                 <>
                   <Sparkles className="w-4 h-4 text-amber-300" />
-                  <span>Upgrade with Paddle Billing ({PREMIUM_PRICE_TEXT})</span>
+                  <span>Upgrade with Paddle Billing ({selectedPriceLabel})</span>
                   <ExternalLink className="w-4 h-4 ml-1" />
                 </>
               )}
@@ -315,7 +355,7 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
               ) : (
                 <>
                   <Zap className="w-3.5 h-3.5 fill-white" />
-                  <span>Instant {PREMIUM_PRICE_TEXT} Demo Activation</span>
+                  <span>Instant {selectedPriceLabel} Demo Activation</span>
                 </>
               )}
             </button>
