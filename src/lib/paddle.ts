@@ -30,12 +30,21 @@ export const paddlePriceId =
 export const paddleMonthlyPriceId =
   getEnvVar('NEXT_PUBLIC_PADDLE_MONTHLY_PRICE_ID') ||
   getEnvVar('VITE_PADDLE_MONTHLY_PRICE_ID') ||
-  paddlePriceId;
+  paddlePriceId ||
+  '';
 
 export const paddleYearlyPriceId =
   getEnvVar('NEXT_PUBLIC_PADDLE_YEARLY_PRICE_ID') ||
   getEnvVar('VITE_PADDLE_YEARLY_PRICE_ID') ||
+  paddlePriceId ||
   '';
+
+// Validate price IDs are configured
+if (!paddleMonthlyPriceId && !paddleYearlyPriceId) {
+  console.warn(
+    '[Paddle] Neither monthly nor yearly price IDs are configured. Set VITE_PADDLE_MONTHLY_PRICE_ID, VITE_PADDLE_YEARLY_PRICE_ID, or VITE_PADDLE_PRICE_ID in your environment.'
+  );
+}
 
 export const paddleEnvironment = (
   getEnvVar('NEXT_PUBLIC_PADDLE_ENV') ||
@@ -107,16 +116,33 @@ export interface OpenPaddleCheckoutOptions {
  * Open Paddle Checkout modal with customData containing userId
  */
 export async function openPaddleCheckout(options: OpenPaddleCheckoutOptions): Promise<boolean> {
-  const selectedPriceId =
-    options.priceId ||
-    (options.billingPeriod === 'yearly' ? paddleYearlyPriceId || paddleMonthlyPriceId : paddleMonthlyPriceId || paddlePriceId);
-
   const paddle = await getPaddleInstance();
 
-  if (!paddle || !selectedPriceId) {
-    console.warn('[Paddle] Cannot open checkout: missing paddle instance or price ID.');
+  let selectedPriceId = options.priceId;
+  if (!selectedPriceId) {
+    if (options.billingPeriod === 'yearly') {
+      selectedPriceId = paddleYearlyPriceId || paddleMonthlyPriceId || paddlePriceId;
+    } else {
+      selectedPriceId = paddleMonthlyPriceId || paddleYearlyPriceId || paddlePriceId;
+    }
+  }
+
+  if (!paddle) {
+    console.error('[Paddle] Cannot open checkout: Paddle SDK failed to initialize.');
     return false;
   }
+
+  if (!selectedPriceId) {
+    console.error(
+      `[Paddle] Cannot open checkout: No price ID found for ${options.billingPeriod || 'monthly'} billing.`,
+      `Monthly ID: ${paddleMonthlyPriceId}`,
+      `Yearly ID: ${paddleYearlyPriceId}`,
+      `General ID: ${paddlePriceId}`
+    );
+    return false;
+  }
+
+  console.log(`[Paddle] Opening checkout with price ID: ${selectedPriceId} (${options.billingPeriod || 'monthly'} billing)`);
 
   activeCheckoutCallbacks = { onSuccess: options.onSuccess, onClose: options.onClose };
 

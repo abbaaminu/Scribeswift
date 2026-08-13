@@ -36,16 +36,20 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
   const [name, setName] = useState('');
   const [statusNotice, setStatusNotice] = useState<string | null>(null);
 
-  const isPaddleConfigured = Boolean(paddleClientToken && (paddleMonthlyPriceId || paddlePriceId));
+  const isPaddleConfigured = Boolean(paddleClientToken && (paddleMonthlyPriceId || paddleYearlyPriceId || paddlePriceId));
   const selectedPriceValue = billingPeriod === 'yearly' ? PREMIUM_YEARLY_PRICE_USD : PREMIUM_MONTHLY_PRICE_USD;
   const selectedPriceLabel = billingPeriod === 'yearly' ? PREMIUM_YEARLY_PRICE_TEXT : PREMIUM_PRICE_TEXT;
   const selectedPriceValueText = billingPeriod === 'yearly' ? PREMIUM_YEARLY_PRICE_VALUE : PREMIUM_PRICE_VALUE;
 
   React.useEffect(() => {
-    if (isOpen && !isPaddleConfigured) {
-      console.warn('[Paddle] NEXT_PUBLIC_PADDLE_CLIENT_TOKEN is missing or not configured.');
+    if (isOpen && paddleClientToken && !paddleMonthlyPriceId && !paddleYearlyPriceId) {
+      console.warn(
+        '[Paddle] No price IDs configured. Subscription modal will not function. Set VITE_PADDLE_MONTHLY_PRICE_ID and VITE_PADDLE_YEARLY_PRICE_ID in your environment.'
+      );
     }
-  }, [isOpen, isPaddleConfigured]);
+  }, [isOpen]);
+
+
 
   if (!isOpen) return null;
 
