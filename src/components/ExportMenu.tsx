@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Download, Copy, Printer, FileText, Subtitles, FileJson, Lock, Sparkles, Check, ChevronDown } from 'lucide-react';
 import { TranscriptionData, SubscriptionTier } from '../types';
 import { exportToTxt, exportToSrt, exportToVtt, exportToJson, triggerPrintTranscript } from '../utils/exportUtils';
+import { PREMIUM_PRICE_TEXT } from '../utils/constants';
 
 interface ExportMenuProps {
   data: TranscriptionData;
@@ -83,7 +84,7 @@ export const ExportMenu: React.FC<ExportMenuProps> = ({
             ? 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-sm'
             : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700'
         }`}
-        title={isPremium ? 'Copy complete transcription text' : 'Upgrade to $1/mo Premium to unlock text copy'}
+        title={isPremium ? 'Copy complete transcription text' : `Upgrade to ${PREMIUM_PRICE_TEXT} Premium to unlock text copy`}
       >
         {!isPremium && <Lock className="w-3.5 h-3.5 text-amber-400" />}
         {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
@@ -94,7 +95,7 @@ export const ExportMenu: React.FC<ExportMenuProps> = ({
       <button
         onClick={() => handleExport('print')}
         className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition"
-        title={isPremium ? 'Print-ready transcript view' : 'Upgrade to $1/mo Premium to unlock printing'}
+        title={isPremium ? 'Print-ready transcript view' : `Upgrade to ${PREMIUM_PRICE_TEXT} Premium to unlock printing`}
       >
         {!isPremium && <Lock className="w-3.5 h-3.5 text-amber-400" />}
         <Printer className="w-3.5 h-3.5" />
@@ -118,7 +119,7 @@ export const ExportMenu: React.FC<ExportMenuProps> = ({
             {!isPremium && (
               <div className="px-3 py-2 bg-amber-500/10 border-b border-slate-800 text-[11px] text-amber-300 flex items-center gap-1.5">
                 <Lock className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" />
-                <span>Exports locked on Free Plan ($1/mo to unlock)</span>
+                <span>Exports locked on Free Plan ({PREMIUM_PRICE_TEXT} to unlock)</span>
               </div>
             )}
 

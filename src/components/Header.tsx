@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { SubscriptionTier } from '../types';
 import { User as SupabaseUser } from '@supabase/supabase-js';
+import { PREMIUM_PRICE_TEXT } from '../utils/constants';
  
 interface HeaderProps {
   tier: SubscriptionTier;
@@ -68,7 +69,7 @@ export const Header: React.FC<HeaderProps> = ({
             >
               <span className="text-slate-500">Tier:</span>
               <span className={isPremium ? 'text-emerald-400 font-bold' : 'text-amber-400 font-bold'}>
-                {isPremium ? 'Premium ($1)' : 'Free'}
+                {isPremium ? `Premium (${PREMIUM_PRICE_TEXT.replace('/mo', '')})` : 'Free'}
               </span>
             </button>
           )}
@@ -85,7 +86,7 @@ export const Header: React.FC<HeaderProps> = ({
             >
               <Crown className="w-3.5 h-3.5 text-amber-300 animate-pulse" />
               <span>Upgrade to Premium</span>
-              <span className="bg-white/20 text-white text-[10px] px-1.5 py-0.2 rounded-full font-bold">$1/mo</span>
+              <span className="bg-white/20 text-white text-[10px] px-1.5 py-0.2 rounded-full font-bold">{PREMIUM_PRICE_TEXT}</span>
             </button>
           ))}
  
@@ -120,7 +121,7 @@ export const Header: React.FC<HeaderProps> = ({
                     <p className="text-xs font-bold text-white truncate">{user.email}</p>
                     <div className="pt-1 flex items-center gap-1.5">
                       <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-300 font-semibold border border-indigo-500/20">
-                        {isPremium ? 'Premium Plan ($1/mo)' : 'Free Tier'}
+                        {isPremium ? `Premium Plan (${PREMIUM_PRICE_TEXT})` : 'Free Tier'}
                       </span>
                     </div>
                   </div>
@@ -134,7 +135,7 @@ export const Header: React.FC<HeaderProps> = ({
                       className="w-full px-3.5 py-2 text-left text-xs text-amber-300 hover:bg-slate-800 flex items-center gap-2 transition"
                     >
                       <Crown className="w-3.5 h-3.5 text-amber-400" />
-                      <span>Upgrade Account ($1/mo)</span>
+                      <span>Upgrade Account ({PREMIUM_PRICE_TEXT})</span>
                     </button>
                   )}
  

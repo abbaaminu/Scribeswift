@@ -11,7 +11,7 @@ import { SubscriptionTier, TranscriptionData } from './types';
 import { Sparkles, Shield, Zap, FileAudio, Lock, Crown, ArrowLeft, Mail } from 'lucide-react';
 import { User as SupabaseUser } from '@supabase/supabase-js';
 import { supabase, fetchUserProfile, isSupabaseConfigured, fetchUserHistory, saveTranscriptionToHistory, clearUserHistory, updateUserPremiumStatus } from './lib/supabase';
-import { CONTACT_EMAIL } from './utils/constants';
+import { CONTACT_EMAIL, PREMIUM_PRICE_TEXT } from './utils/constants';
 
 export default function App() {
   const [user, setUser] = useState<SupabaseUser | null>(null);
@@ -139,7 +139,7 @@ export default function App() {
     }
     
     setToast({
-      message: `Tier switched to ${newTier === 'premium' ? 'Premium ($1/mo)' : 'Free Plan'}.`,
+      message: `Tier switched to ${newTier === 'premium' ? `Premium (${PREMIUM_PRICE_TEXT})` : 'Free Plan'}.`,
       type: newTier === 'premium' ? 'success' : 'info',
     });
   };
@@ -153,7 +153,7 @@ export default function App() {
     }
     
     setToast({
-      message: 'Congratulations! You are now subscribed to ScribeSwift Premium ($1/month). All copy, print, and export features unlocked!',
+      message: `Congratulations! You are now subscribed to ScribeSwift Premium (${PREMIUM_PRICE_TEXT.replace('/mo', '/month')}). All copy, print, and export features unlocked!`,
       type: 'success',
     });
   };
@@ -169,7 +169,7 @@ export default function App() {
 
   const handleLockedActionClick = (actionName: string) => {
     setToast({
-      message: `${actionName} is locked on the Free Plan. Upgrade to Premium ($1/mo) for full export & copy rights!`,
+      message: `${actionName} is locked on the Free Plan. Upgrade to Premium (${PREMIUM_PRICE_TEXT}) for full export & copy rights!`,
       type: 'lock',
     });
     setIsUpgradeModalOpen(true);
@@ -261,7 +261,7 @@ export default function App() {
                 </h2>
                 <p className="text-sm text-slate-400 max-w-md mx-auto">
                   Create a free account to upload audio and video, keep your transcription
-                  history, and unlock the $1/mo Premium plan whenever you're ready.
+                  history, and unlock the {PREMIUM_PRICE_TEXT} Premium plan whenever you're ready.
                 </p>
                 <button
                   onClick={() => setIsAuthModalOpen(true)}
@@ -288,9 +288,9 @@ export default function App() {
                 <div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 text-purple-400 flex items-center justify-center mb-3">
                   <Lock className="w-5 h-5" />
                 </div>
-                <h3 className="font-bold text-white text-base">Free vs $1/mo Premium Tier</h3>
+                <h3 className="font-bold text-white text-base">Free vs {PREMIUM_PRICE_TEXT} Premium Tier</h3>
                 <p className="text-xs text-slate-400 leading-relaxed">
-                  Free tier users preview full transcriptions. Upgrade for $1/mo to unlock copy-paste, print formatting, and TXT/SRT/VTT downloads.
+                  Free tier users preview full transcriptions. Upgrade for {PREMIUM_PRICE_TEXT} to unlock copy-paste, print formatting, and TXT/SRT/VTT downloads.
                 </p>
               </div>
 
@@ -327,7 +327,7 @@ export default function App() {
                 onClick={() => setIsUpgradeModalOpen(true)}
                 className="text-indigo-400 hover:underline cursor-pointer"
               >
-                Subscription Tier ($1/mo)
+                Subscription Tier ({PREMIUM_PRICE_TEXT})
               </button>
             )}
             {!(import.meta as any).env?.PROD && (

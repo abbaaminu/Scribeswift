@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react';
 import { Lock, Sparkles, AlertCircle, X, CheckCircle2, Mail } from 'lucide-react';
-import { CONTACT_EMAIL } from '../utils/constants';
+import { CONTACT_EMAIL, PREMIUM_PRICE_TEXT } from '../utils/constants';
 
 interface ToastProps {
   message: string;
@@ -61,7 +61,7 @@ export const Toast: React.FC<ToastProps> = ({
               }}
               className="mt-2 text-xs font-bold text-amber-300 hover:text-white underline block cursor-pointer"
             >
-              Upgrade to Premium ($1/mo) Now →
+              Upgrade to Premium ({PREMIUM_PRICE_TEXT}) Now →
             </button>
           )}
         </div>

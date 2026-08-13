@@ -4,7 +4,7 @@ import confetti from 'canvas-confetti';
 import { User as SupabaseUser } from '@supabase/supabase-js';
 import { updateUserPremiumStatus } from '../lib/supabase';
 import { openPaddleCheckout, paddleClientToken, paddlePriceId } from '../lib/paddle';
-import { CONTACT_EMAIL } from '../utils/constants';
+import { CONTACT_EMAIL, PREMIUM_PRICE_TEXT, PREMIUM_PRICE_VALUE } from '../utils/constants';
 
 interface SubscriptionModalProps {
   isOpen: boolean;
@@ -144,7 +144,7 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
           </p>
 
           <div className="mt-4 flex items-baseline gap-2">
-            <span className="text-4xl font-extrabold text-white">$1</span>
+            <span className="text-4xl font-extrabold text-white">{PREMIUM_PRICE_VALUE}</span>
             <span className="text-slate-300 text-sm font-medium">/ month</span>
             <span className="ml-2 text-xs px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-semibold border border-emerald-500/30">
               Cancel anytime
@@ -172,7 +172,7 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
 
           <div className="bg-slate-950/60 border border-slate-800/80 rounded-xl p-4 space-y-2.5">
             <div className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">
-              Included in $1/mo Premium Plan
+              Included in {PREMIUM_PRICE_TEXT} Premium Plan
             </div>
 
             <div className="grid grid-cols-1 gap-2 text-xs sm:text-sm">
@@ -230,7 +230,7 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
               ) : (
                 <>
                   <Sparkles className="w-4 h-4 text-amber-300" />
-                  <span>Upgrade with Paddle Billing ($1/mo)</span>
+                  <span>Upgrade with Paddle Billing ({PREMIUM_PRICE_TEXT})</span>
                   <ExternalLink className="w-4 h-4 ml-1" />
                 </>
               )}
@@ -315,7 +315,7 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
               ) : (
                 <>
                   <Zap className="w-3.5 h-3.5 fill-white" />
-                  <span>Instant $1/mo Demo Activation</span>
+                  <span>Instant {PREMIUM_PRICE_TEXT} Demo Activation</span>
                 </>
               )}
             </button>

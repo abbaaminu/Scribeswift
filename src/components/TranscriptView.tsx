@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { TranscriptionData, SubscriptionTier, TimestampSegment } from '../types';
 import { ExportMenu } from './ExportMenu';
+import { PREMIUM_PRICE_TEXT } from '../utils/constants';
 
 interface TranscriptViewProps {
   data: TranscriptionData;
@@ -214,7 +215,7 @@ export const TranscriptView: React.FC<TranscriptViewProps> = ({
               onClick={onOpenUpgradeModal}
               className="px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold whitespace-nowrap transition cursor-pointer shadow-sm"
             >
-              Unlock Premium - $1/mo
+              Unlock Premium - {PREMIUM_PRICE_TEXT}
             </button>
           </div>
         )}
