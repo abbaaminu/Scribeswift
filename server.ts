@@ -61,7 +61,7 @@ const getSupabaseServerClient = () => {
 
 // --- Monthly transcription caps (adjust these two numbers to retune) ------
 const FREE_MONTHLY_TRANSCRIPTION_LIMIT = 5;
-const PREMIUM_MONTHLY_TRANSCRIPTION_LIMIT = 100;
+const PREMIUM_MONTHLY_TRANSCRIPTION_LIMIT = 90;
 
 const currentPeriod = () => {
   const now = new Date();
