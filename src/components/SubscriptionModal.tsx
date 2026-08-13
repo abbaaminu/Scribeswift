@@ -41,8 +41,14 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
     setPaddleLoading(true);
     setStatusNotice(null);
 
-    const userId = user?.id || 'demo_user_' + Date.now();
-    const userEmail = user?.email || undefined;
+    if (!user) {
+      setPaddleLoading(false);
+      setStatusNotice('Please sign in before upgrading to Premium.');
+      return;
+    }
+
+    const userId = user.id;
+    const userEmail = user.email || undefined;
 
     const opened = await openPaddleCheckout({
       userId,
@@ -82,12 +88,16 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
 
   const handleSubscribeDirect = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (!user) {
+      setStatusNotice('Please sign in before upgrading to Premium.');
+      return;
+    }
+
     setLoading(true);
 
     // Update user's is_premium status in Supabase profiles table if logged in
-    if (user) {
-      await updateUserPremiumStatus(user.id, true, user.email);
-    }
+    await updateUserPremiumStatus(user.id, true, user.email);
 
     // Simulate payment gateway completion
     setTimeout(() => {

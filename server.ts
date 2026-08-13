@@ -59,6 +59,11 @@ const getSupabaseServerClient = () => {
   return createClient(supabaseUrl, supabaseKey);
 };
 
+const isValidUuid = (value?: string): boolean => {
+  if (!value) return false;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
+};
+
 // --- Monthly transcription caps (adjust these two numbers to retune) ------
 const FREE_MONTHLY_TRANSCRIPTION_LIMIT = 5;
 const PREMIUM_MONTHLY_TRANSCRIPTION_LIMIT = 90;
@@ -408,6 +413,11 @@ The "speakers" array MUST have exactly ${segments.length} entries, one per segme
       if (!userId) {
         console.warn('[Paddle Webhook] No userId found in webhook payload customData. Payload:', JSON.stringify(payload));
         return res.json({ status: 'ok', warning: 'No userId found in webhook payload' });
+      }
+
+      if (!isValidUuid(userId)) {
+        console.warn('[Paddle Webhook] Rejected invalid userId in webhook payload:', userId);
+        return res.status(400).json({ error: 'Invalid userId format: expected a Supabase auth UUID.' });
       }
 
       const supabaseServer = getSupabaseServerClient();
