@@ -156,12 +156,65 @@ CREATE TRIGGER on_auth_user_created
   FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
 
 -- ============================================================================
--- 5. Verify Setup
+-- 5. Monthly Transcription Usage Tracking (CRITICAL FIX #1)
+-- ============================================================================
+-- Table to track monthly transcription counts per user
+-- This enables atomic check-and-increment to prevent race conditions
+CREATE TABLE IF NOT EXISTS transcription_usage (
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  period TEXT NOT NULL, -- Format: "YYYY-MM" (e.g., "2026-08")
+  count INTEGER DEFAULT 0,
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  
+  CONSTRAINT transcription_usage_pkey PRIMARY KEY (user_id, period)
+);
+
+-- Index for faster lookups
+CREATE INDEX IF NOT EXISTS idx_transcription_usage_user_period
+  ON transcription_usage(user_id, period);
+
+-- ============================================================================
+-- 6. Atomic Usage Check & Increment Function (CRITICAL FIX #1)
+-- ============================================================================
+-- This function atomically checks if a user has reached their monthly limit
+-- AND increments their count in a single transaction to prevent race conditions
+-- from concurrent uploads bypassing the limit.
+CREATE OR REPLACE FUNCTION public.check_and_increment_transcription_usage(
+  user_id UUID,
+  period_string TEXT,
+  is_premium BOOLEAN
+)
+RETURNS TABLE (allowed BOOLEAN, used_count INT, limit_count INT) AS $$
+DECLARE
+  current_usage INT;
+  user_limit INT;
+BEGIN
+  -- Determine limit based on premium tier
+  user_limit := CASE WHEN is_premium THEN 90 ELSE 5 END;
+  
+  -- Atomic check and increment in single transaction
+  INSERT INTO transcription_usage (user_id, period, count)
+  VALUES (user_id, period_string, 1)
+  ON CONFLICT (user_id, period)
+  DO UPDATE SET count = count + 1
+  RETURNING count INTO current_usage;
+  
+  -- Return whether this transcription is allowed and current usage stats
+  RETURN QUERY SELECT
+    (current_usage <= user_limit)::BOOLEAN as allowed,
+    current_usage as used_count,
+    user_limit as limit_count;
+END;
+$$ LANGUAGE plpgsql;
+
+-- ============================================================================
+-- 7. Verify Setup
 -- ============================================================================
 -- After running the above, you should see:
 -- - profiles table with RLS enabled
 -- - transcriptions table with RLS enabled
--- - Both tables should have proper indexes and constraints
+-- - transcription_usage table for tracking monthly limits
+-- - check_and_increment_transcription_usage() function for atomic operations
 --
 -- Test with: SELECT COUNT(*) FROM transcriptions;
 -- You should get 0 rows (or access denied if not authenticated)

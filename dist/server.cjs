@@ -63,8 +63,6 @@ var isValidUuid = (value) => {
   if (!value) return false;
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
 };
-var FREE_MONTHLY_TRANSCRIPTION_LIMIT = 5;
-var PREMIUM_MONTHLY_TRANSCRIPTION_LIMIT = 90;
 var currentPeriod = () => {
   const now = /* @__PURE__ */ new Date();
   return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
@@ -84,7 +82,7 @@ var verifyRequestUser = async (req) => {
     return null;
   }
 };
-var checkUsageCap = async (userId) => {
+var checkAndIncrementUsageCap = async (userId) => {
   const supabase = getSupabaseServerClient();
   if (!supabase) return { allowed: true, limit: 0, used: 0 };
   let isPremium = false;
@@ -93,28 +91,29 @@ var checkUsageCap = async (userId) => {
     isPremium = Boolean(profile?.is_premium);
   } catch {
   }
-  const limit = isPremium ? PREMIUM_MONTHLY_TRANSCRIPTION_LIMIT : FREE_MONTHLY_TRANSCRIPTION_LIMIT;
   const period = currentPeriod();
   try {
-    const { data: usage } = await supabase.from("usage_counters").select("transcription_count").eq("user_id", userId).eq("period", period).maybeSingle();
-    const used = usage?.transcription_count || 0;
-    return { allowed: used < limit, limit, used };
-  } catch {
-    return { allowed: true, limit, used: 0 };
-  }
-};
-var incrementUsage = async (userId) => {
-  const supabase = getSupabaseServerClient();
-  if (!supabase) return;
-  const period = currentPeriod();
-  try {
-    const { data: existing } = await supabase.from("usage_counters").select("transcription_count").eq("user_id", userId).eq("period", period).maybeSingle();
-    await supabase.from("usage_counters").upsert(
-      { user_id: userId, period, transcription_count: (existing?.transcription_count || 0) + 1, updated_at: (/* @__PURE__ */ new Date()).toISOString() },
-      { onConflict: "user_id,period" }
+    const { data, error } = await supabase.rpc(
+      "check_and_increment_transcription_usage",
+      {
+        user_id: userId,
+        period_string: period,
+        is_premium: isPremium
+      }
     );
-  } catch (err) {
-    console.warn("[ScribeSwift] Failed to increment usage counter:", err);
+    if (error || !data?.[0]) {
+      console.error("[UsageCap] Error checking usage:", error);
+      return { allowed: false, limit: 0, used: 0 };
+    }
+    const result = data[0];
+    return {
+      allowed: result.allowed,
+      limit: result.limit_count,
+      used: result.used_count
+    };
+  } catch (e) {
+    console.error("[UsageCap] Exception checking usage:", e);
+    return { allowed: false, limit: 0, used: 0 };
   }
 };
 var uploadsDir = import_path.default.join(process.cwd(), "uploads");
@@ -131,6 +130,40 @@ var upload = (0, import_multer.default)({
 async function startServer() {
   const app = (0, import_express.default)();
   const PORT = 3e3;
+  const withTimeout = async (promise, timeoutMs = 3e4, operationName = "Operation") => {
+    const timeoutPromise = new Promise(
+      (_, reject) => setTimeout(
+        () => reject(new Error(`${operationName} timed out after ${timeoutMs}ms`)),
+        timeoutMs
+      )
+    );
+    return Promise.race([promise, timeoutPromise]);
+  };
+  const withRetry = async (fn, maxAttempts = 3, delayMs = 1e3, operationName = "Operation") => {
+    let lastError = null;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        console.log(
+          `[${operationName}] Attempt ${attempt}/${maxAttempts}`
+        );
+        return await fn();
+      } catch (err) {
+        lastError = err;
+        console.warn(
+          `[${operationName}] Attempt ${attempt} failed:`,
+          err.message
+        );
+        if (attempt < maxAttempts) {
+          const delay = delayMs * Math.pow(2, attempt - 1);
+          console.log(
+            `[${operationName}] Retrying in ${delay}ms...`
+          );
+          await new Promise((resolve) => setTimeout(resolve, delay));
+        }
+      }
+    }
+    throw lastError || new Error(`${operationName} failed after ${maxAttempts} attempts`);
+  };
   app.use(
     import_express.default.json({
       limit: "10mb",
@@ -142,22 +175,49 @@ async function startServer() {
   const verifyPaddleSignature = (req) => {
     const secret = process.env.PADDLE_NOTIFICATION_WEBHOOK_SECRET;
     if (!secret) {
-      console.warn("[Paddle Webhook] PADDLE_NOTIFICATION_WEBHOOK_SECRET is not set \u2014 rejecting webhook.");
+      console.error("[CRITICAL] PADDLE_NOTIFICATION_WEBHOOK_SECRET not set. Webhooks will be rejected.");
       return false;
     }
     const signatureHeader = req.headers["paddle-signature"];
-    if (!signatureHeader || !req.rawBody) return false;
+    if (!signatureHeader || !req.rawBody) {
+      console.warn("[Paddle Webhook] Missing signature header or raw body");
+      return false;
+    }
     const parts = Object.fromEntries(
-      String(signatureHeader).split(";").map((p) => p.split("="))
+      String(signatureHeader).split(";").filter(Boolean).map((p) => {
+        const [key, value] = p.split("=");
+        return [key?.trim(), value?.trim()];
+      })
     );
-    const ts = parts.ts;
+    const ts = parts.ts ? parseInt(parts.ts) : null;
     const h1 = parts.h1;
-    if (!ts || !h1) return false;
-    const signedPayload = `${ts}:${req.rawBody.toString("utf8")}`;
+    if (!ts || !h1) {
+      console.warn("[Paddle Webhook] Invalid signature format");
+      return false;
+    }
+    const nowSeconds = Math.floor(Date.now() / 1e3);
+    const ageDifference = Math.abs(nowSeconds - ts);
+    const maxAgeSeconds = 300;
+    if (ageDifference > maxAgeSeconds) {
+      console.warn(
+        `[Paddle Webhook] Timestamp too old: ${ageDifference} seconds. Max allowed: ${maxAgeSeconds} seconds`
+      );
+      return false;
+    }
+    const rawBodyStr = req.rawBody.toString("utf8");
+    const signedPayload = `${ts}:${rawBodyStr}`;
     const expected = import_crypto.default.createHmac("sha256", secret).update(signedPayload).digest("hex");
     try {
-      return import_crypto.default.timingSafeEqual(Buffer.from(expected, "hex"), Buffer.from(h1, "hex"));
-    } catch {
+      const result = import_crypto.default.timingSafeEqual(
+        Buffer.from(expected, "hex"),
+        Buffer.from(h1, "hex")
+      );
+      if (result) {
+        console.log("[Paddle Webhook] \u2713 Signature verified successfully");
+      }
+      return result;
+    } catch (e) {
+      console.warn("[Paddle Webhook] Signature verification failed - invalid format or mismatch");
       return false;
     }
   };
@@ -198,23 +258,37 @@ async function startServer() {
   };
   const transcribeChunkWithGroq = async (groq, filePath, language) => {
     const langCode = LANGUAGE_CODE_MAP[language];
-    const response = await groq.audio.transcriptions.create({
-      file: import_fs.default.createReadStream(filePath),
-      model: "whisper-large-v3-turbo",
-      response_format: "verbose_json",
-      timestamp_granularities: ["segment"],
-      ...langCode ? { language: langCode } : {}
-    });
-    const segments = (response.segments || []).map((seg) => ({
-      start: typeof seg.start === "number" ? seg.start : 0,
-      end: typeof seg.end === "number" ? seg.end : 0,
-      text: (seg.text || "").trim()
-    }));
-    return {
-      text: (response.text || "").trim(),
-      duration: typeof response.duration === "number" ? response.duration : 0,
-      segments
-    };
+    return withRetry(
+      async () => {
+        const response = await withTimeout(
+          groq.audio.transcriptions.create({
+            file: import_fs.default.createReadStream(filePath),
+            model: "whisper-large-v3-turbo",
+            response_format: "verbose_json",
+            timestamp_granularities: ["segment"],
+            ...langCode ? { language: langCode } : {}
+          }),
+          4e4,
+          // 40 second timeout
+          "Groq transcription"
+        );
+        const segments = (response.segments || []).map((seg) => ({
+          start: typeof seg.start === "number" ? seg.start : 0,
+          end: typeof seg.end === "number" ? seg.end : 0,
+          text: (seg.text || "").trim()
+        }));
+        return {
+          text: (response.text || "").trim(),
+          duration: typeof response.duration === "number" ? response.duration : 0,
+          segments
+        };
+      },
+      3,
+      // 3 attempts
+      1e3,
+      // 1 second initial delay
+      `Groq transcription for file ${import_path.default.basename(filePath)}`
+    );
   };
   const generateSpeakersAndSummary = async (groq, segments, detectedLanguage) => {
     const fallback = {
@@ -229,18 +303,20 @@ async function startServer() {
     if (segments.length === 0) return fallback;
     try {
       const transcriptForPrompt = segments.map((seg, idx) => `[${idx}] (${seg.startTime.toFixed(1)}s-${seg.endTime.toFixed(1)}s) ${seg.text}`).join("\n");
-      const completion = await groq.chat.completions.create({
-        model: "openai/gpt-oss-120b",
-        temperature: 0.2,
-        response_format: { type: "json_object" },
-        messages: [
-          {
-            role: "system",
-            content: "You are ScribeSwift, a world-class transcript analyst. You infer speaker turns from context and produce concise executive summaries. Always respond with strict JSON only, matching the requested schema exactly."
-          },
-          {
-            role: "user",
-            content: `The transcript below (language: ${detectedLanguage}) is a numbered list of timestamped segments from a single audio/video recording. Segments are in chronological order and indices are 0-based and contiguous.
+      const completion = await withTimeout(
+        withRetry(
+          async () => groq.chat.completions.create({
+            model: "openai/gpt-oss-120b",
+            temperature: 0.2,
+            response_format: { type: "json_object" },
+            messages: [
+              {
+                role: "system",
+                content: "You are ScribeSwift, a world-class transcript analyst. You infer speaker turns from context and produce concise executive summaries. Always respond with strict JSON only, matching the requested schema exactly."
+              },
+              {
+                role: "user",
+                content: `The transcript below (language: ${detectedLanguage}) is a numbered list of timestamped segments from a single audio/video recording. Segments are in chronological order and indices are 0-based and contiguous.
 
 Tasks:
 1. Infer who is speaking in each segment based on context, turn-taking, and any self-identification in the speech (e.g. names mentioned). Label speakers generically as "Speaker 1", "Speaker 2", etc., unless a speaker's real name is clearly stated in the dialogue, in which case use that name. If the whole recording is a single narrator/presenter, label every segment "Speaker 1".
@@ -261,11 +337,23 @@ Respond with ONLY this JSON shape, no other text:
 }
 
 The "speakers" array MUST have exactly ${segments.length} entries, one per segment index, in order.`
-          }
-        ]
-      });
+              }
+            ]
+          }),
+          2,
+          // 2 attempts for LLM
+          500,
+          "Speaker/summary generation"
+        ),
+        2e4,
+        // 20 second timeout for LLM
+        "Speaker/summary generation"
+      );
       const raw = completion.choices?.[0]?.message?.content;
-      if (!raw) return fallback;
+      if (!raw) {
+        console.warn("[ScribeSwift] No response from speaker/summary generation, using fallback");
+        return fallback;
+      }
       const parsed = JSON.parse(raw);
       const speakers = Array.isArray(parsed.speakers) ? parsed.speakers : [];
       return {
@@ -520,10 +608,10 @@ The "speakers" array MUST have exactly ${segments.length} entries, one per segme
         if (!authedUserId) {
           return res.status(401).json({ error: "Please sign in to transcribe files." });
         }
-        const usage = await checkUsageCap(authedUserId);
-        if (!usage.allowed) {
+        const usageCap = await checkAndIncrementUsageCap(authedUserId);
+        if (!usageCap.allowed) {
           return res.status(429).json({
-            error: `You've reached your monthly transcription limit (${usage.used}/${usage.limit}). Upgrade to Premium for a higher limit, or try again next month.`
+            error: `You've reached your monthly transcription limit (${usageCap.used}/${usageCap.limit}). Upgrade to Premium for a higher limit, or try again next month.`
           });
         }
       }
@@ -599,7 +687,6 @@ The "speakers" array MUST have exactly ${segments.length} entries, one per segme
         createdAt: (/* @__PURE__ */ new Date()).toISOString()
       };
       if (authedUserId) {
-        await incrementUsage(authedUserId);
       }
       res.json(transcriptionResult);
     } catch (err) {

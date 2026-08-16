@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Crown, Check, Shield, CreditCard, ArrowRight, Zap, Sparkles, ExternalLink, AlertCircle, Mail } from 'lucide-react';
+import { X, Crown, Check, Shield, ArrowRight, Zap, Sparkles, ExternalLink, AlertCircle, Mail } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { User as SupabaseUser } from '@supabase/supabase-js';
 import { updateUserPremiumStatus } from '../lib/supabase';
@@ -27,13 +27,8 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
   onClose,
   onSubscribeSuccess,
 }) => {
-  const [loading, setLoading] = useState(false);
   const [paddleLoading, setPaddleLoading] = useState(false);
   const [billingPeriod, setBillingPeriod] = useState<'monthly' | 'yearly'>('monthly');
-  const [cardNumber, setCardNumber] = useState('');
-  const [expDate, setExpDate] = useState('');
-  const [cvc, setCvc] = useState('');
-  const [name, setName] = useState('');
   const [statusNotice, setStatusNotice] = useState<string | null>(null);
 
   const isPaddleConfigured = Boolean(paddleClientToken && (paddleMonthlyPriceId || paddleYearlyPriceId || paddlePriceId));
@@ -94,46 +89,6 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
     } else {
       setStatusNotice('Paddle Checkout opened! Complete payment in the overlay window.');
     }
-  };
-
-  const handleQuickFillCard = () => {
-    setCardNumber('4242 •••• •••• 4242');
-    setExpDate('12/28');
-    setCvc('888');
-    setName(user?.email ? user.email.split('@')[0] : 'Alex Johnson');
-  };
-
-  const handleSubscribeDirect = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    if (!user) {
-      setStatusNotice('Please sign in before upgrading to Premium.');
-      return;
-    }
-
-    setLoading(true);
-
-    // Update user's is_premium status in Supabase profiles table if logged in
-    await updateUserPremiumStatus(user.id, true, user.email);
-
-    // Simulate payment gateway completion
-    setTimeout(() => {
-      setLoading(false);
-
-      // Fire victory confetti celebration
-      try {
-        confetti({
-          particleCount: 100,
-          spread: 70,
-          origin: { y: 0.6 },
-        });
-      } catch (err) {
-        console.log('Confetti triggered');
-      }
-
-      onSubscribeSuccess();
-      onClose();
-    }, 900);
   };
 
   return (
@@ -280,92 +235,6 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
               )}
             </button>
           </div>
-
-          {/* Dev-only demo form: lets you test the premium-unlock flow locally
-              without a real Paddle transaction. Hidden in production builds so
-              real visitors can only unlock Premium by actually paying. */}
-          {!(import.meta as any).env?.PROD && (
-          <>
-          <div className="relative flex items-center justify-center my-2">
-            <div className="border-t border-slate-800 w-full" />
-            <span className="bg-slate-900 px-3 text-[10px] text-slate-500 uppercase tracking-widest font-semibold">
-              Dev Only — Instant Demo Upgrade
-            </span>
-          </div>
-
-          {/* Direct Card Demo Payment Form (dev/testing only) */}
-          <form onSubmit={handleSubscribeDirect} className="space-y-3">
-            <div className="flex items-center justify-between">
-              <label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
-                <CreditCard className="w-3.5 h-3.5 text-indigo-400" />
-                <span>Direct Payment Simulation</span>
-              </label>
-              <button
-                type="button"
-                onClick={handleQuickFillCard}
-                className="text-xs font-medium text-indigo-400 hover:text-indigo-300 underline cursor-pointer"
-              >
-                Auto-fill Card
-              </button>
-            </div>
-
-            <div className="space-y-2">
-              <input
-                type="text"
-                placeholder="Cardholder Name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                required
-                className="w-full px-3 py-1.5 rounded-lg bg-slate-950 border border-slate-700 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
-              />
-              <input
-                type="text"
-                placeholder="Card Number (4242 ...)"
-                value={cardNumber}
-                onChange={(e) => setCardNumber(e.target.value)}
-                required
-                className="w-full px-3 py-1.5 rounded-lg bg-slate-950 border border-slate-700 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 font-mono"
-              />
-              <div className="grid grid-cols-2 gap-2">
-                <input
-                  type="text"
-                  placeholder="MM / YY"
-                  value={expDate}
-                  onChange={(e) => setExpDate(e.target.value)}
-                  required
-                  className="w-full px-3 py-1.5 rounded-lg bg-slate-950 border border-slate-700 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 font-mono"
-                />
-                <input
-                  type="text"
-                  placeholder="CVC"
-                  value={cvc}
-                  onChange={(e) => setCvc(e.target.value)}
-                  required
-                  className="w-full px-3 py-1.5 rounded-lg bg-slate-950 border border-slate-700 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 font-mono"
-                />
-              </div>
-            </div>
-
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full py-2.5 px-4 rounded-xl font-bold text-xs text-white bg-slate-800 hover:bg-slate-700 border border-slate-700 flex items-center justify-center gap-2 transition disabled:opacity-50 cursor-pointer"
-            >
-              {loading ? (
-                <>
-                  <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                  <span>Updating Supabase Profile...</span>
-                </>
-              ) : (
-                <>
-                  <Zap className="w-3.5 h-3.5 fill-white" />
-                  <span>Instant {selectedPriceLabel} Demo Activation</span>
-                </>
-              )}
-            </button>
-          </form>
-          </>
-          )}
 
           <div className="pt-2 border-t border-slate-800/60 flex flex-col sm:flex-row items-center justify-between text-[11px] text-slate-500 gap-2">
             <span className="flex items-center gap-1">

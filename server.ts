@@ -89,37 +89,49 @@ const verifyRequestUser = async (req) => {
   }
 };
 
-const checkUsageCap = async (userId) => {
+// CRITICAL FIX #1: Atomic usage cap check using database function
+// This prevents race conditions when multiple concurrent uploads happen
+const checkAndIncrementUsageCap = async (userId: string) => {
   const supabase = getSupabaseServerClient();
   if (!supabase) return { allowed: true, limit: 0, used: 0 };
+
   let isPremium = false;
   try {
-    const { data: profile } = await supabase.from('profiles').select('is_premium').eq('id', userId).maybeSingle();
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('is_premium')
+      .eq('id', userId)
+      .maybeSingle();
     isPremium = Boolean(profile?.is_premium);
   } catch {}
-  const limit = isPremium ? PREMIUM_MONTHLY_TRANSCRIPTION_LIMIT : FREE_MONTHLY_TRANSCRIPTION_LIMIT;
-  const period = currentPeriod();
-  try {
-    const { data: usage } = await supabase.from('usage_counters').select('transcription_count').eq('user_id', userId).eq('period', period).maybeSingle();
-    const used = usage?.transcription_count || 0;
-    return { allowed: used < limit, limit, used };
-  } catch {
-    return { allowed: true, limit, used: 0 };
-  }
-};
 
-const incrementUsage = async (userId) => {
-  const supabase = getSupabaseServerClient();
-  if (!supabase) return;
   const period = currentPeriod();
+
   try {
-    const { data: existing } = await supabase.from('usage_counters').select('transcription_count').eq('user_id', userId).eq('period', period).maybeSingle();
-    await supabase.from('usage_counters').upsert(
-      { user_id: userId, period, transcription_count: (existing?.transcription_count || 0) + 1, updated_at: new Date().toISOString() },
-      { onConflict: 'user_id,period' }
+    // Call atomic database function to check AND increment in single transaction
+    const { data, error } = await supabase.rpc(
+      'check_and_increment_transcription_usage',
+      {
+        user_id: userId,
+        period_string: period,
+        is_premium: isPremium,
+      }
     );
-  } catch (err) {
-    console.warn('[ScribeSwift] Failed to increment usage counter:', err);
+
+    if (error || !data?.[0]) {
+      console.error('[UsageCap] Error checking usage:', error);
+      return { allowed: false, limit: 0, used: 0 };
+    }
+
+    const result = data[0];
+    return {
+      allowed: result.allowed,
+      limit: result.limit_count,
+      used: result.used_count,
+    };
+  } catch (e) {
+    console.error('[UsageCap] Exception checking usage:', e);
+    return { allowed: false, limit: 0, used: 0 };
   }
 };
 
@@ -141,6 +153,56 @@ async function startServer() {
   const app = express();
   const PORT = 3000;
 
+  // CRITICAL FIX #3: Timeout wrapper for async operations
+  const withTimeout = async <T>(
+    promise: Promise<T>,
+    timeoutMs: number = 30000,
+    operationName: string = 'Operation'
+  ): Promise<T> => {
+    const timeoutPromise = new Promise<never>((_, reject) =>
+      setTimeout(
+        () => reject(new Error(`${operationName} timed out after ${timeoutMs}ms`)),
+        timeoutMs
+      )
+    );
+    return Promise.race([promise, timeoutPromise]);
+  };
+
+  // CRITICAL FIX #3: Retry wrapper for transient failures
+  const withRetry = async <T>(
+    fn: () => Promise<T>,
+    maxAttempts: number = 3,
+    delayMs: number = 1000,
+    operationName: string = 'Operation'
+  ): Promise<T> => {
+    let lastError: Error | null = null;
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        console.log(
+          `[${operationName}] Attempt ${attempt}/${maxAttempts}`
+        );
+        return await fn();
+      } catch (err: any) {
+        lastError = err;
+        console.warn(
+          `[${operationName}] Attempt ${attempt} failed:`,
+          err.message
+        );
+
+        if (attempt < maxAttempts) {
+          const delay = delayMs * Math.pow(2, attempt - 1); // Exponential backoff
+          console.log(
+            `[${operationName}] Retrying in ${delay}ms...`
+          );
+          await new Promise((resolve) => setTimeout(resolve, delay));
+        }
+      }
+    }
+
+    throw lastError || new Error(`${operationName} failed after ${maxAttempts} attempts`);
+  };
+
   app.use(
     express.json({
       limit: '10mb',
@@ -150,34 +212,69 @@ async function startServer() {
     })
   );
 
-  // Verify Paddle's Paddle-Signature header (format: "ts=...;h1=...")
-  // against PADDLE_NOTIFICATION_WEBHOOK_SECRET. Returns true only if the
-  // request genuinely came from Paddle.
+  // CRITICAL FIX #2: Verify Paddle's Paddle-Signature header with timestamp validation
+  // Prevents replay attacks and forged webhooks
   const verifyPaddleSignature = (req: any): boolean => {
     const secret = process.env.PADDLE_NOTIFICATION_WEBHOOK_SECRET;
     if (!secret) {
-      console.warn('[Paddle Webhook] PADDLE_NOTIFICATION_WEBHOOK_SECRET is not set — rejecting webhook.');
+      console.error('[CRITICAL] PADDLE_NOTIFICATION_WEBHOOK_SECRET not set. Webhooks will be rejected.');
       return false;
     }
 
     const signatureHeader = req.headers['paddle-signature'];
-    if (!signatureHeader || !req.rawBody) return false;
+    if (!signatureHeader || !req.rawBody) {
+      console.warn('[Paddle Webhook] Missing signature header or raw body');
+      return false;
+    }
 
     const parts = Object.fromEntries(
       String(signatureHeader)
         .split(';')
-        .map((p) => p.split('=') as [string, string])
+        .filter(Boolean)
+        .map((p) => {
+          const [key, value] = p.split('=');
+          return [key?.trim(), value?.trim()];
+        })
     );
-    const ts = parts.ts;
-    const h1 = parts.h1;
-    if (!ts || !h1) return false;
 
-    const signedPayload = `${ts}:${req.rawBody.toString('utf8')}`;
-    const expected = crypto.createHmac('sha256', secret).update(signedPayload).digest('hex');
+    const ts = parts.ts ? parseInt(parts.ts) : null;
+    const h1 = parts.h1;
+
+    if (!ts || !h1) {
+      console.warn('[Paddle Webhook] Invalid signature format');
+      return false;
+    }
+
+    // ADD TIMESTAMP VALIDATION: Reject old webhooks (replay attack prevention)
+    const nowSeconds = Math.floor(Date.now() / 1000);
+    const ageDifference = Math.abs(nowSeconds - ts);
+    const maxAgeSeconds = 300; // 5 minutes
+
+    if (ageDifference > maxAgeSeconds) {
+      console.warn(
+        `[Paddle Webhook] Timestamp too old: ${ageDifference} seconds. Max allowed: ${maxAgeSeconds} seconds`
+      );
+      return false;
+    }
+
+    const rawBodyStr = req.rawBody.toString('utf8');
+    const signedPayload = `${ts}:${rawBodyStr}`;
+    const expected = crypto
+      .createHmac('sha256', secret)
+      .update(signedPayload)
+      .digest('hex');
 
     try {
-      return crypto.timingSafeEqual(Buffer.from(expected, 'hex'), Buffer.from(h1, 'hex'));
-    } catch {
+      const result = crypto.timingSafeEqual(
+        Buffer.from(expected, 'hex'),
+        Buffer.from(h1, 'hex')
+      );
+      if (result) {
+        console.log('[Paddle Webhook] ✓ Signature verified successfully');
+      }
+      return result;
+    } catch (e) {
+      console.warn('[Paddle Webhook] Signature verification failed - invalid format or mismatch');
       return false;
     }
   };
@@ -249,38 +346,47 @@ async function startServer() {
       .map((f) => path.join(outDir, f));
   };
 
-  // Transcribe a single audio chunk with Groq's hosted Whisper Large v3
-  // Turbo model, requesting segment-level timestamps.
+  // CRITICAL FIX #3: Transcribe a single audio chunk with timeout and retry
   const transcribeChunkWithGroq = async (
     groq: Groq,
     filePath: string,
     language: string
   ): Promise<{ text: string; duration: number; segments: Array<{ start: number; end: number; text: string }> }> => {
     const langCode = LANGUAGE_CODE_MAP[language];
-    const response: any = await groq.audio.transcriptions.create({
-      file: fs.createReadStream(filePath),
-      model: 'whisper-large-v3-turbo',
-      response_format: 'verbose_json',
-      timestamp_granularities: ['segment'],
-      ...(langCode ? { language: langCode } : {}),
-    } as any);
 
-    const segments = (response.segments || []).map((seg: any) => ({
-      start: typeof seg.start === 'number' ? seg.start : 0,
-      end: typeof seg.end === 'number' ? seg.end : 0,
-      text: (seg.text || '').trim(),
-    }));
+    return withRetry(
+      async () => {
+        const response: any = await withTimeout(
+          groq.audio.transcriptions.create({
+            file: fs.createReadStream(filePath),
+            model: 'whisper-large-v3-turbo',
+            response_format: 'verbose_json',
+            timestamp_granularities: ['segment'],
+            ...(langCode ? { language: langCode } : {}),
+          } as any),
+          40000, // 40 second timeout
+          'Groq transcription'
+        );
 
-    return {
-      text: (response.text || '').trim(),
-      duration: typeof response.duration === 'number' ? response.duration : 0,
-      segments,
-    };
+        const segments = (response.segments || []).map((seg: any) => ({
+          start: typeof seg.start === 'number' ? seg.start : 0,
+          end: typeof seg.end === 'number' ? seg.end : 0,
+          text: (seg.text || '').trim(),
+        }));
+
+        return {
+          text: (response.text || '').trim(),
+          duration: typeof response.duration === 'number' ? response.duration : 0,
+          segments,
+        };
+      },
+      3, // 3 attempts
+      1000, // 1 second initial delay
+      `Groq transcription for file ${path.basename(filePath)}`
+    );
   };
 
-  // Second-pass Groq LLM call: infer speaker turns and generate an
-  // executive summary from the assembled transcript. Falls back gracefully
-  // if the model call fails so a transcription never gets blocked on it.
+  // CRITICAL FIX #3: Generate speakers and summary with timeout and retry
   const generateSpeakersAndSummary = async (
     groq: Groq,
     segments: Array<{ startTime: number; endTime: number; text: string }>,
@@ -306,19 +412,22 @@ async function startServer() {
         .map((seg, idx) => `[${idx}] (${seg.startTime.toFixed(1)}s-${seg.endTime.toFixed(1)}s) ${seg.text}`)
         .join('\n');
 
-      const completion = await groq.chat.completions.create({
-        model: 'openai/gpt-oss-120b',
-        temperature: 0.2,
-        response_format: { type: 'json_object' },
-        messages: [
-          {
-            role: 'system',
-            content:
-              'You are ScribeSwift, a world-class transcript analyst. You infer speaker turns from context and produce concise executive summaries. Always respond with strict JSON only, matching the requested schema exactly.',
-          },
-          {
-            role: 'user',
-            content: `The transcript below (language: ${detectedLanguage}) is a numbered list of timestamped segments from a single audio/video recording. Segments are in chronological order and indices are 0-based and contiguous.
+      const completion = await withTimeout(
+        withRetry(
+          async () =>
+            groq.chat.completions.create({
+              model: 'openai/gpt-oss-120b',
+              temperature: 0.2,
+              response_format: { type: 'json_object' },
+              messages: [
+                {
+                  role: 'system',
+                  content:
+                    'You are ScribeSwift, a world-class transcript analyst. You infer speaker turns from context and produce concise executive summaries. Always respond with strict JSON only, matching the requested schema exactly.',
+                },
+                {
+                  role: 'user',
+                  content: `The transcript below (language: ${detectedLanguage}) is a numbered list of timestamped segments from a single audio/video recording. Segments are in chronological order and indices are 0-based and contiguous.
 
 Tasks:
 1. Infer who is speaking in each segment based on context, turn-taking, and any self-identification in the speech (e.g. names mentioned). Label speakers generically as "Speaker 1", "Speaker 2", etc., unless a speaker's real name is clearly stated in the dialogue, in which case use that name. If the whole recording is a single narrator/presenter, label every segment "Speaker 1".
@@ -339,12 +448,22 @@ Respond with ONLY this JSON shape, no other text:
 }
 
 The "speakers" array MUST have exactly ${segments.length} entries, one per segment index, in order.`,
-          },
-        ],
-      });
+                },
+              ],
+            }),
+          2, // 2 attempts for LLM
+          500,
+          'Speaker/summary generation'
+        ),
+        20000, // 20 second timeout for LLM
+        'Speaker/summary generation'
+      );
 
       const raw = completion.choices?.[0]?.message?.content;
-      if (!raw) return fallback;
+      if (!raw) {
+        console.warn('[ScribeSwift] No response from speaker/summary generation, using fallback');
+        return fallback;
+      }
 
       const parsed = JSON.parse(raw);
       const speakers: string[] = Array.isArray(parsed.speakers) ? parsed.speakers : [];
@@ -652,10 +771,10 @@ The "speakers" array MUST have exactly ${segments.length} entries, one per segme
         if (!authedUserId) {
           return res.status(401).json({ error: 'Please sign in to transcribe files.' });
         }
-        const usage = await checkUsageCap(authedUserId);
-        if (!usage.allowed) {
+        const usageCap = await checkAndIncrementUsageCap(authedUserId);
+        if (!usageCap.allowed) {
           return res.status(429).json({
-            error: `You've reached your monthly transcription limit (${usage.used}/${usage.limit}). Upgrade to Premium for a higher limit, or try again next month.`,
+            error: `You've reached your monthly transcription limit (${usageCap.used}/${usageCap.limit}). Upgrade to Premium for a higher limit, or try again next month.`,
           });
         }
       }
@@ -758,7 +877,7 @@ The "speakers" array MUST have exactly ${segments.length} entries, one per segme
       };
 
       if (authedUserId) {
-        await incrementUsage(authedUserId);
+        // Usage already incremented atomically by checkAndIncrementUsageCap
       }
 
       res.json(transcriptionResult);
