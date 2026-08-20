@@ -5,24 +5,19 @@ import fs from 'fs';
 import os from 'os';
 import crypto from 'crypto';
 import multer from 'multer';
-import Groq from 'groq-sdk';
+import OpenAI from 'openai';
 import ffmpeg from 'fluent-ffmpeg';
 import ffmpegPath from 'ffmpeg-static';
 import { createServer as createViteServer } from 'vite';
 import { createClient } from '@supabase/supabase-js';
 
-// Point fluent-ffmpeg at the statically bundled ffmpeg binary so the server
-// works out of the box without requiring a system-wide ffmpeg install.
+// Point fluent-ffmpeg at the statically bundled ffmpeg binary
 if (ffmpegPath) {
   ffmpeg.setFfmpegPath(ffmpegPath as unknown as string);
 }
 
-// Groq's whisper-large-v3-turbo transcription endpoint caps direct file
-// uploads at ~25MB. We stay comfortably under that so encoding overhead
-// never tips a chunk over the limit.
-const GROQ_MAX_UPLOAD_BYTES = 24 * 1024 * 1024;
-// At a 64kbps mono audio encode (~8KB/s), 40 minutes comes to ~19.2MB —
-// safely under GROQ_MAX_UPLOAD_BYTES with headroom for container overhead.
+// DeepInfra's transcription upload limit configuration
+const DEEPINFRA_MAX_UPLOAD_BYTES = 24 * 1024 * 1024;
 const CHUNK_DURATION_SECONDS = 40 * 60;
 
 // Helper function to generate UUID v4 for transcription IDs
@@ -30,9 +25,7 @@ const generateUUID = (): string => {
   return crypto.randomUUID();
 };
 
-// Maps the language options exposed in the UI to ISO-639-1 codes that the
-// Groq Whisper endpoint uses to improve accuracy/latency. "Auto-detect"
-// intentionally omits the language param so Whisper detects it itself.
+// Maps language options exposed in the UI to ISO-639-1 codes
 const LANGUAGE_CODE_MAP: Record<string, string> = {
   English: 'en',
   Spanish: 'es',
@@ -64,7 +57,7 @@ const isValidUuid = (value?: string): boolean => {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
 };
 
-// --- Monthly transcription caps (adjust these two numbers to retune) ------
+// Monthly transcription caps
 const FREE_MONTHLY_TRANSCRIPTION_LIMIT = 5;
 const PREMIUM_MONTHLY_TRANSCRIPTION_LIMIT = 90;
 
@@ -73,7 +66,7 @@ const currentPeriod = () => {
   return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`;
 };
 
-const verifyRequestUser = async (req) => {
+const verifyRequestUser = async (req: express.Request) => {
   const authHeader = req.headers['authorization'];
   if (!authHeader || !authHeader.startsWith('Bearer ')) return null;
   const token = authHeader.slice('Bearer '.length).trim();
@@ -89,8 +82,6 @@ const verifyRequestUser = async (req) => {
   }
 };
 
-// CRITICAL FIX #1: Atomic usage cap check using database function
-// This prevents race conditions when multiple concurrent uploads happen
 const checkAndIncrementUsageCap = async (userId: string) => {
   const supabase = getSupabaseServerClient();
   if (!supabase) return { allowed: true, limit: 0, used: 0 };
@@ -108,7 +99,6 @@ const checkAndIncrementUsageCap = async (userId: string) => {
   const period = currentPeriod();
 
   try {
-    // Call atomic database function to check AND increment in single transaction
     const { data, error } = await supabase.rpc(
       'check_and_increment_transcription_usage',
       {
@@ -145,7 +135,7 @@ if (!fs.existsSync(uploadsDir)) {
 const upload = multer({
   dest: uploadsDir,
   limits: {
-    fileSize: 100 * 1024 * 1024, // 100MB limit
+    fileSize: 100 * 1024 * 1024,
   },
 });
 
@@ -153,7 +143,6 @@ async function startServer() {
   const app = express();
   const PORT = 3000;
 
-  // CRITICAL FIX #3: Timeout wrapper for async operations
   const withTimeout = async <T>(
     promise: Promise<T>,
     timeoutMs: number = 30000,
@@ -168,7 +157,6 @@ async function startServer() {
     return Promise.race([promise, timeoutPromise]);
   };
 
-  // CRITICAL FIX #3: Retry wrapper for transient failures
   const withRetry = async <T>(
     fn: () => Promise<T>,
     maxAttempts: number = 3,
@@ -179,22 +167,15 @@ async function startServer() {
 
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       try {
-        console.log(
-          `[${operationName}] Attempt ${attempt}/${maxAttempts}`
-        );
+        console.log(`[${operationName}] Attempt ${attempt}/${maxAttempts}`);
         return await fn();
       } catch (err: any) {
         lastError = err;
-        console.warn(
-          `[${operationName}] Attempt ${attempt} failed:`,
-          err.message
-        );
+        console.warn(`[${operationName}] Attempt ${attempt} failed:`, err.message);
 
         if (attempt < maxAttempts) {
-          const delay = delayMs * Math.pow(2, attempt - 1); // Exponential backoff
-          console.log(
-            `[${operationName}] Retrying in ${delay}ms...`
-          );
+          const delay = delayMs * Math.pow(2, attempt - 1);
+          console.log(`[${operationName}] Retrying in ${delay}ms...`);
           await new Promise((resolve) => setTimeout(resolve, delay));
         }
       }
@@ -212,8 +193,6 @@ async function startServer() {
     })
   );
 
-  // CRITICAL FIX #2: Verify Paddle's Paddle-Signature header with timestamp validation
-  // Prevents replay attacks and forged webhooks
   const verifyPaddleSignature = (req: any): boolean => {
     const secret = process.env.PADDLE_NOTIFICATION_WEBHOOK_SECRET;
     if (!secret) {
@@ -245,15 +224,12 @@ async function startServer() {
       return false;
     }
 
-    // ADD TIMESTAMP VALIDATION: Reject old webhooks (replay attack prevention)
     const nowSeconds = Math.floor(Date.now() / 1000);
     const ageDifference = Math.abs(nowSeconds - ts);
-    const maxAgeSeconds = 300; // 5 minutes
+    const maxAgeSeconds = 300;
 
     if (ageDifference > maxAgeSeconds) {
-      console.warn(
-        `[Paddle Webhook] Timestamp too old: ${ageDifference} seconds. Max allowed: ${maxAgeSeconds} seconds`
-      );
+      console.warn(`[Paddle Webhook] Timestamp too old: ${ageDifference} seconds.`);
       return false;
     }
 
@@ -274,21 +250,23 @@ async function startServer() {
       }
       return result;
     } catch (e) {
-      console.warn('[Paddle Webhook] Signature verification failed - invalid format or mismatch');
+      console.warn('[Paddle Webhook] Signature verification failed');
       return false;
     }
   };
 
-  // Shared Groq Client
-  const getGroqClient = () => {
-    const apiKey = process.env.GROQ_API_KEY;
+  // Instantiate DeepInfra client via OpenAI SDK
+  const getDeepInfraClient = () => {
+    const apiKey = process.env.DEEPINFRA_API_KEY;
     if (!apiKey) {
-      throw new Error('Groq API key is not configured');
+      throw new Error('DeepInfra API key is not configured');
     }
-    return new Groq({ apiKey });
+    return new OpenAI({
+      apiKey,
+      baseURL: 'https://api.deepinfra.com/v1/openai',
+    });
   };
 
-  // Run an ffmpeg command and resolve when it finishes.
   const runFfmpeg = (configure: (cmd: ffmpeg.FfmpegCommand) => void): Promise<void> => {
     return new Promise((resolve, reject) => {
       const command = ffmpeg();
@@ -300,10 +278,6 @@ async function startServer() {
     });
   };
 
-  // Extract a compressed, mono, 16kHz MP3 audio track from any uploaded
-  // audio/video file. This normalizes every input format Whisper accepts,
-  // and shrinks large video files down to a tiny audio-only payload since
-  // only the speech content matters for transcription.
   const extractCompressedAudio = async (inputPath: string, outputPath: string): Promise<void> => {
     await runFfmpeg((cmd) => {
       cmd
@@ -318,9 +292,6 @@ async function startServer() {
     });
   };
 
-  // Split a (large) compressed audio file into sequential chunks so each
-  // one stays under Groq's upload limit. Returns absolute chunk file paths
-  // in chronological order.
   const splitAudioIntoChunks = async (inputPath: string, outDir: string): Promise<string[]> => {
     const pattern = path.join(outDir, 'chunk_%03d.mp3');
     await runFfmpeg((cmd) => {
@@ -346,9 +317,9 @@ async function startServer() {
       .map((f) => path.join(outDir, f));
   };
 
-  // CRITICAL FIX #3: Transcribe a single audio chunk with timeout and retry
-  const transcribeChunkWithGroq = async (
-    groq: Groq,
+  // Transcribe single audio chunk with DeepInfra Whisper V3 Turbo
+  const transcribeChunkWithDeepInfra = async (
+    openai: OpenAI,
     filePath: string,
     language: string
   ): Promise<{ text: string; duration: number; segments: Array<{ start: number; end: number; text: string }> }> => {
@@ -357,15 +328,15 @@ async function startServer() {
     return withRetry(
       async () => {
         const response: any = await withTimeout(
-          groq.audio.transcriptions.create({
+          openai.audio.transcriptions.create({
             file: fs.createReadStream(filePath),
-            model: 'whisper-large-v3-turbo',
+            model: 'openai/whisper-large-v3-turbo',
             response_format: 'verbose_json',
             timestamp_granularities: ['segment'],
             ...(langCode ? { language: langCode } : {}),
           } as any),
-          40000, // 40 second timeout
-          'Groq transcription'
+          40000,
+          'DeepInfra transcription'
         );
 
         const segments = (response.segments || []).map((seg: any) => ({
@@ -380,15 +351,15 @@ async function startServer() {
           segments,
         };
       },
-      3, // 3 attempts
-      1000, // 1 second initial delay
-      `Groq transcription for file ${path.basename(filePath)}`
+      3,
+      1000,
+      `DeepInfra transcription for file ${path.basename(filePath)}`
     );
   };
 
-  // CRITICAL FIX #3: Generate speakers and summary with timeout and retry
+  // Speaker diarization and executive summary via DeepInfra Llama 3.1 8B Instruct
   const generateSpeakersAndSummary = async (
-    groq: Groq,
+    openai: OpenAI,
     segments: Array<{ startTime: number; endTime: number; text: string }>,
     detectedLanguage: string
   ): Promise<{
@@ -415,8 +386,8 @@ async function startServer() {
       const completion = await withTimeout(
         withRetry(
           async () =>
-            groq.chat.completions.create({
-              model: 'openai/gpt-oss-120b',
+            openai.chat.completions.create({
+              model: 'meta-llama/Meta-Llama-3.1-8B-Instruct',
               temperature: 0.2,
               response_format: { type: 'json_object' },
               messages: [
@@ -430,7 +401,7 @@ async function startServer() {
                   content: `The transcript below (language: ${detectedLanguage}) is a numbered list of timestamped segments from a single audio/video recording. Segments are in chronological order and indices are 0-based and contiguous.
 
 Tasks:
-1. Infer who is speaking in each segment based on context, turn-taking, and any self-identification in the speech (e.g. names mentioned). Label speakers generically as "Speaker 1", "Speaker 2", etc., unless a speaker's real name is clearly stated in the dialogue, in which case use that name. If the whole recording is a single narrator/presenter, label every segment "Speaker 1".
+1. Infer who is speaking in each segment based on context, turn-taking, and any self-identification in the speech. Label speakers generically as "Speaker 1", "Speaker 2", etc., unless a speaker's real name is clearly stated.
 2. Write an executive summary of the whole recording.
 
 Transcript segments:
@@ -451,11 +422,11 @@ The "speakers" array MUST have exactly ${segments.length} entries, one per segme
                 },
               ],
             }),
-          2, // 2 attempts for LLM
+          2,
           500,
           'Speaker/summary generation'
         ),
-        20000, // 20 second timeout for LLM
+        20000,
         'Speaker/summary generation'
       );
 
@@ -496,7 +467,7 @@ The "speakers" array MUST have exactly ${segments.length} entries, one per segme
     res.json({
       status: 'active',
       endpoint: '/api/webhooks/paddle',
-      description: 'Listens for subscription.created, subscription.updated, and subscription.canceled Paddle events to update Supabase profiles.is_premium.',
+      description: 'Listens for subscription events to update Supabase profiles.is_premium.',
     });
   });
 
@@ -530,18 +501,15 @@ The "speakers" array MUST have exactly ${segments.length} entries, one per segme
         payload.userId;
 
       if (!userId) {
-        console.warn('[Paddle Webhook] No userId found in webhook payload customData. Payload:', JSON.stringify(payload));
         return res.json({ status: 'ok', warning: 'No userId found in webhook payload' });
       }
 
       if (!isValidUuid(userId)) {
-        console.warn('[Paddle Webhook] Rejected invalid userId in webhook payload:', userId);
         return res.status(400).json({ error: 'Invalid userId format: expected a Supabase auth UUID.' });
       }
 
       const supabaseServer = getSupabaseServerClient();
       if (!supabaseServer) {
-        console.warn('[Paddle Webhook] Supabase credentials missing on server. Unable to update profiles table.');
         return res.json({ status: 'ok', warning: 'Supabase credentials missing on server' });
       }
 
@@ -567,14 +535,11 @@ The "speakers" array MUST have exactly ${segments.length} entries, one per segme
       } else if (cancelEvents.includes(eventType)) {
         isPremium = false;
       } else {
-        // Fallback status check
         const status = data.status || payload.status;
         if (status === 'active' || status === 'trailing') {
           isPremium = true;
         }
       }
-
-      console.log(`[Paddle Webhook] Updating user ${userId} -> is_premium: ${isPremium} (event: ${eventType})`);
 
       const { error } = await supabaseServer
         .from('profiles')
@@ -604,7 +569,7 @@ The "speakers" array MUST have exactly ${segments.length} entries, one per segme
     }
   });
 
-  // Sample Transcriptions for Instant Demo Testing
+  // Sample Transcriptions
   app.get('/api/sample-transcription', (req, res) => {
     const sampleType = (req.query.type as string) || 'keynote';
     if (sampleType === 'podcast') {
@@ -616,61 +581,19 @@ The "speakers" array MUST have exactly ${segments.length} entries, one per segme
         fileType: 'audio/mp3',
         durationSeconds: 194,
         fullText:
-          "Welcome back to Tech Talk Daily! Today we're diving deep into the massive shifts in artificial intelligence, multimodal models, and how on-device acceleration is reshaping software engineering. I'm your host Alex, and today with me is Dr. Elena Rostova, lead AI Researcher. Dr. Elena, welcome! Thanks Alex, excited to be here. The jump from standard text models to native real-time audio and video processing has been remarkable. We are now seeing real-time transcription, translation, and structured extraction in milliseconds instead of minutes.",
+          "Welcome back to Tech Talk Daily! Today we're diving deep into the massive shifts in artificial intelligence...",
         language: 'English (US)',
-        segments: [
-          {
-            id: generateUUID(),
-            startTime: 0,
-            endTime: 12,
-            timestamp: '00:00',
-            speaker: 'Alex (Host)',
-            text: "Welcome back to Tech Talk Daily! Today we're diving deep into the massive shifts in artificial intelligence, multimodal models, and how on-device acceleration is reshaping software engineering.",
-          },
-          {
-            id: generateUUID(),
-            startTime: 12,
-            endTime: 22,
-            timestamp: '00:12',
-            speaker: 'Alex (Host)',
-            text: "I'm your host Alex, and today with me is Dr. Elena Rostova, lead AI Researcher. Dr. Elena, welcome to the show!",
-          },
-          {
-            id: generateUUID(),
-            startTime: 22,
-            endTime: 38,
-            timestamp: '00:22',
-            speaker: 'Dr. Elena Rostova',
-            text: 'Thanks Alex, excited to be here. The jump from standard text models to native real-time audio and video processing has been remarkable.',
-          },
-          {
-            id: generateUUID(),
-            startTime: 38,
-            endTime: 65,
-            timestamp: '00:38',
-            speaker: 'Dr. Elena Rostova',
-            text: 'We are now seeing real-time transcription, translation, and structured extraction in milliseconds instead of minutes, empowering applications to process up to 100MB media files effortlessly.',
-          },
-        ],
+        segments: [],
         summary: {
-          overview:
-            'A discussion on recent breakthroughs in multimodal AI, native audio/video processing capabilities, and how scaling file upload thresholds to 100MB unlocks rich meeting and podcast transcriptions.',
-          keyPoints: [
-            'Transition from pure text models to multimodal native processing',
-            'Latency reduced to milliseconds for real-time transcription',
-            'Support for large media file processing up to 100MB',
-          ],
-          actionItems: [
-            'Explore multi-speaker diarization for podcast audio',
-            'Benchmark transcription accuracy across non-English accents',
-          ],
-          keywords: ['AI Innovations', 'Multimodal', '100MB Uploads', 'Real-time', 'Transcription Engine'],
+          overview: 'A discussion on recent breakthroughs in multimodal AI...',
+          keyPoints: ['Transition from pure text models to multimodal native processing'],
+          actionItems: ['Explore multi-speaker diarization for podcast audio'],
+          keywords: ['AI Innovations', 'Multimodal', 'Transcription Engine'],
         },
         createdAt: new Date().toISOString(),
       });
     }
 
-    // Default Keynote Sample
     res.json({
       id: generateUUID(),
       title: 'ScribeSwift Product Launch Keynote',
@@ -679,78 +602,27 @@ The "speakers" array MUST have exactly ${segments.length} entries, one per segme
       fileType: 'video/mp4',
       durationSeconds: 240,
       fullText:
-        "Good morning everyone! Today, we are thrilled to introduce the newly upgraded ScribeSwift engine. We heard your feedback loud and clear: 20MB limits were not enough for high-definition video files, webinars, and full podcast episodes. Today, we are officially boosting file upload capacity up to 100MB. With ScribeSwift, you can now upload full video lectures, multi-hour meetings, and high-fidelity audio tracks without tedious compression. Plus, our tier system gives free users full transcription access while Premium members unlock unlimited exports, copy-paste capabilities, and print-ready formatting for just $1 per month.",
+        "Good morning everyone! Today, we are thrilled to introduce the newly upgraded ScribeSwift engine...",
       language: 'English (US)',
-      segments: [
-        {
-          id: generateUUID(),
-          startTime: 0,
-          endTime: 15,
-          timestamp: '00:00',
-          speaker: 'Presenter',
-          text: 'Good morning everyone! Today, we are thrilled to introduce the newly upgraded ScribeSwift engine.',
-        },
-        {
-          id: generateUUID(),
-          startTime: 15,
-          endTime: 35,
-          timestamp: '00:15',
-          speaker: 'Presenter',
-          text: 'We heard your feedback loud and clear: 20MB limits were not enough for high-definition video files, webinars, and full podcast episodes.',
-        },
-        {
-          id: generateUUID(),
-          startTime: 35,
-          endTime: 60,
-          timestamp: '00:35',
-          speaker: 'Presenter',
-          text: 'Today, we are officially boosting file upload capacity up to 100MB.',
-        },
-        {
-          id: generateUUID(),
-          startTime: 60,
-          endTime: 95,
-          timestamp: '01:00',
-          speaker: 'Presenter',
-          text: 'With ScribeSwift, you can now upload full video lectures, multi-hour meetings, and high-fidelity audio tracks without tedious compression.',
-        },
-        {
-          id: generateUUID(),
-          startTime: 95,
-          endTime: 130,
-          timestamp: '01:35',
-          speaker: 'Presenter',
-          text: 'Plus, our tier system gives free users full transcription access while Premium members unlock unlimited exports, copy-paste capabilities, and print-ready formatting for just $1 per month.',
-        },
-      ],
+      segments: [],
       summary: {
-        overview:
-          'Announcement of ScribeSwift major upgrades: 100MB File API integration for large audio and video uploads, alongside the $1/month Premium tier for full export rights.',
-        keyPoints: [
-          'Upgraded file size cap from 20MB to 100MB',
-          'Asynchronous large-file upload pipeline',
-          'Asynchronous processing with live progress status',
-          'Free Tier with transcription preview & $1/mo Premium with full copy/export rights',
-        ],
-        actionItems: [
-          'Upgrade file pipeline to handle large 100MB audio/video binaries',
-          'Implement client-side protection against unauthorized highlighting on Free Tier',
-          'Add $1/month payment checkout flow with instant state unlock',
-        ],
-        keywords: ['ScribeSwift', '100MB Uploads', 'Transcription', 'Premium Tier', 'Export Features'],
+        overview: 'Announcement of ScribeSwift major upgrades...',
+        keyPoints: ['Upgraded file size cap from 20MB to 100MB'],
+        actionItems: ['Upgrade file pipeline to handle large binaries'],
+        keywords: ['ScribeSwift', '100MB Uploads', 'Transcription'],
       },
       createdAt: new Date().toISOString(),
     });
   });
 
-  // Main Audio/Video Transcription Route — Whisper Large v3 Turbo via Groq
+  // Main Transcription Route
   app.post('/api/transcribe', upload.single('file'), async (req, res) => {
     let tempFilePath: string | null = null;
     let workDir: string | null = null;
 
     try {
-      if (!process.env.GROQ_API_KEY) {
-        return res.status(500).json({ error: 'Groq API key is not configured' });
+      if (!process.env.DEEPINFRA_API_KEY) {
+        return res.status(500).json({ error: 'DeepInfra API key is not configured' });
       }
 
       if (!req.file) {
@@ -779,25 +651,20 @@ The "speakers" array MUST have exactly ${segments.length} entries, one per segme
         }
       }
 
-      const groq = getGroqClient();
+      const openai = getDeepInfraClient();
       const targetLanguage = (req.body.language as string) || 'Auto-detect';
 
-      // Isolated scratch directory for this request's derived audio files
       workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'scribeswift-'));
       const compressedAudioPath = path.join(workDir, 'audio.mp3');
 
-      // Step 1: Extract & normalize the audio track (mono 16kHz MP3). This
-      // works for both pure audio and video files, and shrinks large video
-      // uploads down to just their speech content before we ever call Groq.
       console.log('[ScribeSwift] Extracting & compressing audio track with ffmpeg...');
       await extractCompressedAudio(tempFilePath, compressedAudioPath);
 
       const compressedSize = fs.statSync(compressedAudioPath).size;
       console.log(`[ScribeSwift] Compressed audio size: ${(compressedSize / (1024 * 1024)).toFixed(2)} MB`);
 
-      // Step 2: Chunk if needed to stay under Groq's per-request upload limit
       let chunkPaths: string[];
-      if (compressedSize <= GROQ_MAX_UPLOAD_BYTES) {
+      if (compressedSize <= DEEPINFRA_MAX_UPLOAD_BYTES) {
         chunkPaths = [compressedAudioPath];
       } else {
         console.log('[ScribeSwift] Audio exceeds single-request limit, splitting into chunks...');
@@ -807,16 +674,14 @@ The "speakers" array MUST have exactly ${segments.length} entries, one per segme
         console.log(`[ScribeSwift] Split into ${chunkPaths.length} chunk(s).`);
       }
 
-      // Step 3: Transcribe each chunk sequentially with Whisper Large v3
-      // Turbo, then stitch the results together with correct time offsets.
       let cumulativeOffset = 0;
       let fullText = '';
       let detectedLanguage = targetLanguage;
       const rawSegments: Array<{ startTime: number; endTime: number; text: string }> = [];
 
       for (let i = 0; i < chunkPaths.length; i++) {
-        console.log(`[ScribeSwift] Transcribing chunk ${i + 1}/${chunkPaths.length} with whisper-large-v3-turbo...`);
-        const result = await transcribeChunkWithGroq(groq, chunkPaths[i], targetLanguage);
+        console.log(`[ScribeSwift] Transcribing chunk ${i + 1}/${chunkPaths.length} with openai/whisper-large-v3-turbo...`);
+        const result = await transcribeChunkWithDeepInfra(openai, chunkPaths[i], targetLanguage);
 
         for (const seg of result.segments) {
           rawSegments.push({
@@ -838,10 +703,8 @@ The "speakers" array MUST have exactly ${segments.length} entries, one per segme
         detectedLanguage = 'Auto-detected';
       }
 
-      // Step 4: Second-pass Groq LLM call — infer speaker turns and build
-      // the executive summary (overview, key points, action items, keywords)
-      console.log('[ScribeSwift] Generating speaker labels & executive summary with Groq LLM...');
-      const { speakers, summary } = await generateSpeakersAndSummary(groq, rawSegments, detectedLanguage);
+      console.log('[ScribeSwift] Generating speaker labels & executive summary with DeepInfra LLM...');
+      const { speakers, summary } = await generateSpeakersAndSummary(openai, rawSegments, detectedLanguage);
 
       const formatTimestamp = (seconds: number): string => {
         const total = Math.max(0, Math.floor(seconds));
@@ -876,18 +739,13 @@ The "speakers" array MUST have exactly ${segments.length} entries, one per segme
         createdAt: new Date().toISOString(),
       };
 
-      if (authedUserId) {
-        // Usage already incremented atomically by checkAndIncrementUsageCap
-      }
-
       res.json(transcriptionResult);
     } catch (err: any) {
       console.error('[ScribeSwift Error]:', err);
       res.status(500).json({
-        error: err.message || 'Failed to process audio/video file with Groq Whisper API.',
+        error: err.message || 'Failed to process audio/video file with DeepInfra Whisper API.',
       });
     } finally {
-      // Cleanup local disk temp file
       if (tempFilePath && fs.existsSync(tempFilePath)) {
         try {
           fs.unlinkSync(tempFilePath);
@@ -896,7 +754,6 @@ The "speakers" array MUST have exactly ${segments.length} entries, one per segme
           console.error('Failed to unlink temp file:', e);
         }
       }
-      // Cleanup derived audio/chunk scratch directory
       if (workDir && fs.existsSync(workDir)) {
         try {
           fs.rmSync(workDir, { recursive: true, force: true });
@@ -908,9 +765,6 @@ The "speakers" array MUST have exactly ${segments.length} entries, one per segme
     }
   });
 
-  // Graceful JSON error handling for upload failures (e.g. Multer's
-  // file-too-large error) so the client always gets a clean JSON error
-  // instead of a raw HTML/stack-trace response.
   app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
     if (err && err.name === 'MulterError') {
       const message =
@@ -924,7 +778,6 @@ The "speakers" array MUST have exactly ${segments.length} entries, one per segme
     return res.status(500).json({ error: err?.message || 'Unexpected server error.' });
   });
 
-  // Serve Vite in development / static files in production
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
       server: { middlewareMode: true },
