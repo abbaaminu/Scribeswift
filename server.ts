@@ -333,8 +333,6 @@ async function startServer() {
             file: await OpenAI.toFile(fs.createReadStream(filePath), path.basename(filePath)),
             model: 'openai/whisper-large-v3-turbo',
             response_format: 'verbose_json',
-            model: 'openai/whisper-large-v3-turbo',
-            response_format: 'verbose_json',
             timestamp_granularities: ['segment'],
             ...(langCode ? { language: langCode } : {}),
           } as any),
@@ -795,8 +793,12 @@ The "speakers" array MUST have exactly ${segments.length} entries, one per segme
     });
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`[ScribeSwift Server] Listening on http://0.0.0.0:${PORT}`);
+  const PORT = process.env.PORT || 3000;
+
+server.listen(PORT, '0.0.0.0', () => {
+    console.log(`[ScribeSwift Server] Listening on port ${PORT}`);
+});
+
   });
 }
 
