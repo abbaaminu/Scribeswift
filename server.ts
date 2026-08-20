@@ -329,7 +329,10 @@ async function startServer() {
       async () => {
         const response: any = await withTimeout(
           openai.audio.transcriptions.create({
-            file: fs.createReadStream(filePath),
+            // Add "toFile" around your stream so DeepInfra reads the form data properly
+            file: await OpenAI.toFile(fs.createReadStream(filePath), path.basename(filePath)),
+            model: 'openai/whisper-large-v3-turbo',
+            response_format: 'verbose_json',
             model: 'openai/whisper-large-v3-turbo',
             response_format: 'verbose_json',
             timestamp_granularities: ['segment'],
