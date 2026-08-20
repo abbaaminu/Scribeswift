@@ -141,7 +141,6 @@ const upload = multer({
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
 
   const withTimeout = async <T>(
     promise: Promise<T>,
@@ -795,10 +794,8 @@ The "speakers" array MUST have exactly ${segments.length} entries, one per segme
 
   const PORT = process.env.PORT || 3000;
 
-server.listen(PORT, '0.0.0.0', () => {
+  app.listen(PORT, '0.0.0.0', () => {
     console.log(`[ScribeSwift Server] Listening on port ${PORT}`);
-});
-
   });
 }
 
