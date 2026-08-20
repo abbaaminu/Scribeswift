@@ -11,21 +11,17 @@ import ffmpegPath from 'ffmpeg-static';
 import { createServer as createViteServer } from 'vite';
 import { createClient } from '@supabase/supabase-js';
 
-// Point fluent-ffmpeg at the statically bundled ffmpeg binary
 if (ffmpegPath) {
   ffmpeg.setFfmpegPath(ffmpegPath as unknown as string);
 }
 
-// DeepInfra's transcription upload limit configuration
 const DEEPINFRA_MAX_UPLOAD_BYTES = 24 * 1024 * 1024;
 const CHUNK_DURATION_SECONDS = 40 * 60;
 
-// Helper function to generate UUID v4 for transcription IDs
 const generateUUID = (): string => {
   return crypto.randomUUID();
 };
 
-// Maps language options exposed in the UI to ISO-639-1 codes
 const LANGUAGE_CODE_MAP: Record<string, string> = {
   English: 'en',
   Spanish: 'es',
@@ -36,7 +32,6 @@ const LANGUAGE_CODE_MAP: Record<string, string> = {
   Chinese: 'zh',
 };
 
-// Helper to instantiate Supabase client on server
 const getSupabaseServerClient = () => {
   const supabaseUrl =
     process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
@@ -57,8 +52,8 @@ const isValidUuid = (value?: string): boolean => {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
 };
 
-// Monthly transcription caps
-const FREE_MONTHLY_TRANSCRIPTION_LIMIT = 5;
+// Monthly transcription limit updated to 4 for free trial
+const FREE_MONTHLY_TRANSCRIPTION_LIMIT = 4;
 const PREMIUM_MONTHLY_TRANSCRIPTION_LIMIT = 90;
 
 const currentPeriod = () => {
@@ -125,13 +120,11 @@ const checkAndIncrementUsageCap = async (userId: string) => {
   }
 };
 
-// Ensure uploads directory exists
 const uploadsDir = path.join(process.cwd(), 'uploads');
 if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
 }
 
-// Configure Multer for up to 100MB file uploads
 const upload = multer({
   dest: uploadsDir,
   limits: {
@@ -195,7 +188,7 @@ async function startServer() {
   const verifyPaddleSignature = (req: any): boolean => {
     const secret = process.env.PADDLE_NOTIFICATION_WEBHOOK_SECRET;
     if (!secret) {
-      console.error('[CRITICAL] PADDLE_NOTIFICATION_WEBHOOK_SECRET not set. Webhooks will be rejected.');
+      console.error('[CRITICAL] PADDLE_NOTIFICATION_WEBHOOK_SECRET not set.');
       return false;
     }
 
@@ -225,9 +218,7 @@ async function startServer() {
 
     const nowSeconds = Math.floor(Date.now() / 1000);
     const ageDifference = Math.abs(nowSeconds - ts);
-    const maxAgeSeconds = 300;
-
-    if (ageDifference > maxAgeSeconds) {
+    if (ageDifference > 300) {
       console.warn(`[Paddle Webhook] Timestamp too old: ${ageDifference} seconds.`);
       return false;
     }
@@ -240,21 +231,15 @@ async function startServer() {
       .digest('hex');
 
     try {
-      const result = crypto.timingSafeEqual(
+      return crypto.timingSafeEqual(
         Buffer.from(expected, 'hex'),
         Buffer.from(h1, 'hex')
       );
-      if (result) {
-        console.log('[Paddle Webhook] ✓ Signature verified successfully');
-      }
-      return result;
     } catch (e) {
-      console.warn('[Paddle Webhook] Signature verification failed');
       return false;
     }
   };
 
-  // Instantiate DeepInfra client via OpenAI SDK
   const getDeepInfraClient = () => {
     const apiKey = process.env.DEEPINFRA_API_KEY;
     if (!apiKey) {
@@ -316,7 +301,6 @@ async function startServer() {
       .map((f) => path.join(outDir, f));
   };
 
-  // Transcribe single audio chunk with DeepInfra Whisper V3 Turbo
   const transcribeChunkWithDeepInfra = async (
     openai: OpenAI,
     filePath: string,
@@ -328,7 +312,6 @@ async function startServer() {
       async () => {
         const response: any = await withTimeout(
           openai.audio.transcriptions.create({
-            // Add "toFile" around your stream so DeepInfra reads the form data properly
             file: await OpenAI.toFile(fs.createReadStream(filePath), path.basename(filePath)),
             model: 'openai/whisper-large-v3-turbo',
             response_format: 'verbose_json',
@@ -357,7 +340,6 @@ async function startServer() {
     );
   };
 
-  // Speaker diarization and executive summary via DeepInfra Llama 3.1 8B Instruct
   const generateSpeakersAndSummary = async (
     openai: OpenAI,
     segments: Array<{ startTime: number; endTime: number; text: string }>,
@@ -394,31 +376,23 @@ async function startServer() {
                 {
                   role: 'system',
                   content:
-                    'You are ScribeSwift, a world-class transcript analyst. You infer speaker turns from context and produce concise executive summaries. Always respond with strict JSON only, matching the requested schema exactly.',
+                    'You are ScribeSwift, a world-class transcript analyst. You infer speaker turns from context and produce concise executive summaries. Always respond with strict JSON only.',
                 },
                 {
                   role: 'user',
-                  content: `The transcript below (language: ${detectedLanguage}) is a numbered list of timestamped segments from a single audio/video recording. Segments are in chronological order and indices are 0-based and contiguous.
-
-Tasks:
-1. Infer who is speaking in each segment based on context, turn-taking, and any self-identification in the speech. Label speakers generically as "Speaker 1", "Speaker 2", etc., unless a speaker's real name is clearly stated.
-2. Write an executive summary of the whole recording.
-
-Transcript segments:
+                  content: `Transcript segments (language: ${detectedLanguage}):
 ${transcriptForPrompt}
 
-Respond with ONLY this JSON shape, no other text:
+Respond with ONLY this JSON shape:
 {
-  "speakers": ["<label for segment 0>", "<label for segment 1>", ...],
+  "speakers": ["Speaker 1", ...],
   "summary": {
     "overview": "<2-4 sentence narrative overview>",
     "keyPoints": ["<key point>", ...],
-    "actionItems": ["<action item, decision, or follow-up>", ...],
-    "keywords": ["<topic keyword>", ...]
+    "actionItems": ["<action item>", ...],
+    "keywords": ["<keyword>", ...]
   }
-}
-
-The "speakers" array MUST have exactly ${segments.length} entries, one per segment index, in order.`,
+}`,
                 },
               ],
             }),
@@ -431,10 +405,7 @@ The "speakers" array MUST have exactly ${segments.length} entries, one per segme
       );
 
       const raw = completion.choices?.[0]?.message?.content;
-      if (!raw) {
-        console.warn('[ScribeSwift] No response from speaker/summary generation, using fallback');
-        return fallback;
-      }
+      if (!raw) return fallback;
 
       const parsed = JSON.parse(raw);
       const speakers: string[] = Array.isArray(parsed.speakers) ? parsed.speakers : [];
@@ -452,37 +423,27 @@ The "speakers" array MUST have exactly ${segments.length} entries, one per segme
         },
       };
     } catch (err) {
-      console.error('[ScribeSwift] Speaker/summary generation failed, using fallback:', err);
+      console.error('[ScribeSwift] Speaker/summary generation failed:', err);
       return fallback;
     }
   };
 
-  // Health check
   app.get('/api/health', (req, res) => {
     res.json({ status: 'ok', maxUploadSizeMb: 100, service: 'ScribeSwift API' });
   });
 
-  // Paddle Webhook Info Endpoint
   app.get('/api/webhooks/paddle', (req, res) => {
-    res.json({
-      status: 'active',
-      endpoint: '/api/webhooks/paddle',
-      description: 'Listens for subscription events to update Supabase profiles.is_premium.',
-    });
+    res.json({ status: 'active', endpoint: '/api/webhooks/paddle' });
   });
 
-  // Paddle Billing Webhook Handler
   app.post('/api/webhooks/paddle', async (req, res) => {
     try {
       if (!verifyPaddleSignature(req)) {
-        console.warn('[Paddle Webhook] Rejected request with invalid or missing signature.');
         return res.status(401).json({ error: 'Invalid webhook signature' });
       }
 
       const payload = req.body || {};
       const eventType = payload.event_type || payload.alert_name || payload.event_name || 'unknown';
-      console.log(`[Paddle Webhook] Received event: ${eventType}`);
-
       const data = payload.data || payload;
       const customData =
         data.custom_data ||
@@ -493,129 +454,31 @@ The "speakers" array MUST have exactly ${segments.length} entries, one per segme
             : payload.passthrough
           : {});
 
-      const userId =
-        customData.userId ||
-        customData.user_id ||
-        data.userId ||
-        data.user_id ||
-        payload.userId;
+      const userId = customData.userId || customData.user_id || data.userId || data.user_id || payload.userId;
 
-      if (!userId) {
-        return res.json({ status: 'ok', warning: 'No userId found in webhook payload' });
-      }
-
-      if (!isValidUuid(userId)) {
-        return res.status(400).json({ error: 'Invalid userId format: expected a Supabase auth UUID.' });
+      if (!userId || !isValidUuid(userId)) {
+        return res.status(400).json({ error: 'Invalid or missing userId' });
       }
 
       const supabaseServer = getSupabaseServerClient();
-      if (!supabaseServer) {
-        return res.json({ status: 'ok', warning: 'Supabase credentials missing on server' });
-      }
+      if (!supabaseServer) return res.json({ status: 'ok', warning: 'Supabase credentials missing' });
 
       let isPremium = false;
-      const activeEvents = [
-        'subscription.created',
-        'subscription.updated',
-        'subscription_created',
-        'subscription_updated',
-        'transaction.completed',
-        'payment_succeeded',
-      ];
-      const cancelEvents = [
-        'subscription.canceled',
-        'subscription.cancelled',
-        'subscription_canceled',
-        'subscription.paused',
-        'subscription_paused',
-      ];
-
+      const activeEvents = ['subscription.created', 'subscription.updated', 'transaction.completed'];
       if (activeEvents.includes(eventType)) {
         isPremium = true;
-      } else if (cancelEvents.includes(eventType)) {
-        isPremium = false;
-      } else {
-        const status = data.status || payload.status;
-        if (status === 'active' || status === 'trailing') {
-          isPremium = true;
-        }
       }
 
-      const { error } = await supabaseServer
+      await supabaseServer
         .from('profiles')
-        .upsert(
-          {
-            id: userId,
-            is_premium: isPremium,
-            updated_at: new Date().toISOString(),
-          },
-          { onConflict: 'id' }
-        );
+        .upsert({ id: userId, is_premium: isPremium, updated_at: new Date().toISOString() }, { onConflict: 'id' });
 
-      if (error) {
-        console.error('[Paddle Webhook] Error updating profiles in Supabase:', error.message);
-        return res.status(500).json({ error: error.message });
-      }
-
-      return res.json({
-        status: 'success',
-        userId,
-        is_premium: isPremium,
-        eventType,
-      });
+      return res.json({ status: 'success', userId, is_premium: isPremium });
     } catch (err: any) {
-      console.error('[Paddle Webhook Error]:', err);
       return res.status(500).json({ error: err.message || 'Webhook processing failed' });
     }
   });
 
-  // Sample Transcriptions
-  app.get('/api/sample-transcription', (req, res) => {
-    const sampleType = (req.query.type as string) || 'keynote';
-    if (sampleType === 'podcast') {
-      return res.json({
-        id: generateUUID(),
-        title: 'Tech Talk Daily - AI Innovations in 2026',
-        fileName: 'tech_talk_daily_ep42.mp3',
-        fileSize: 18450000,
-        fileType: 'audio/mp3',
-        durationSeconds: 194,
-        fullText:
-          "Welcome back to Tech Talk Daily! Today we're diving deep into the massive shifts in artificial intelligence...",
-        language: 'English (US)',
-        segments: [],
-        summary: {
-          overview: 'A discussion on recent breakthroughs in multimodal AI...',
-          keyPoints: ['Transition from pure text models to multimodal native processing'],
-          actionItems: ['Explore multi-speaker diarization for podcast audio'],
-          keywords: ['AI Innovations', 'Multimodal', 'Transcription Engine'],
-        },
-        createdAt: new Date().toISOString(),
-      });
-    }
-
-    res.json({
-      id: generateUUID(),
-      title: 'ScribeSwift Product Launch Keynote',
-      fileName: 'scribeswift_launch_presentation.mp4',
-      fileSize: 48200000,
-      fileType: 'video/mp4',
-      durationSeconds: 240,
-      fullText:
-        "Good morning everyone! Today, we are thrilled to introduce the newly upgraded ScribeSwift engine...",
-      language: 'English (US)',
-      segments: [],
-      summary: {
-        overview: 'Announcement of ScribeSwift major upgrades...',
-        keyPoints: ['Upgraded file size cap from 20MB to 100MB'],
-        actionItems: ['Upgrade file pipeline to handle large binaries'],
-        keywords: ['ScribeSwift', '100MB Uploads', 'Transcription'],
-      },
-      createdAt: new Date().toISOString(),
-    });
-  });
-
-  // Main Transcription Route
   app.post('/api/transcribe', upload.single('file'), async (req, res) => {
     let tempFilePath: string | null = null;
     let workDir: string | null = null;
@@ -626,16 +489,10 @@ The "speakers" array MUST have exactly ${segments.length} entries, one per segme
       }
 
       if (!req.file) {
-        return res.status(400).json({ error: 'No media file uploaded. Please select an audio or video file up to 100MB.' });
+        return res.status(400).json({ error: 'No media file uploaded.' });
       }
 
       tempFilePath = req.file.path;
-      const fileSizeMb = (req.file.size / (1024 * 1024)).toFixed(2);
-      console.log(`[ScribeSwift] Received file: ${req.file.originalname} (${fileSizeMb} MB, type: ${req.file.mimetype})`);
-
-      if (req.file.size > 100 * 1024 * 1024) {
-        return res.status(400).json({ error: 'File size exceeds maximum allowed capacity of 100MB.' });
-      }
 
       let authedUserId = null;
       if (getSupabaseServerClient()) {
@@ -646,7 +503,7 @@ The "speakers" array MUST have exactly ${segments.length} entries, one per segme
         const usageCap = await checkAndIncrementUsageCap(authedUserId);
         if (!usageCap.allowed) {
           return res.status(429).json({
-            error: `You've reached your monthly transcription limit (${usageCap.used}/${usageCap.limit}). Upgrade to Premium for a higher limit, or try again next month.`,
+            error: `You've reached your free trial limit (${usageCap.used}/${usageCap.limit}). Upgrade to Premium for 90 transcriptions per month.`,
           });
         }
       }
@@ -657,21 +514,16 @@ The "speakers" array MUST have exactly ${segments.length} entries, one per segme
       workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'scribeswift-'));
       const compressedAudioPath = path.join(workDir, 'audio.mp3');
 
-      console.log('[ScribeSwift] Extracting & compressing audio track with ffmpeg...');
       await extractCompressedAudio(tempFilePath, compressedAudioPath);
-
       const compressedSize = fs.statSync(compressedAudioPath).size;
-      console.log(`[ScribeSwift] Compressed audio size: ${(compressedSize / (1024 * 1024)).toFixed(2)} MB`);
 
       let chunkPaths: string[];
       if (compressedSize <= DEEPINFRA_MAX_UPLOAD_BYTES) {
         chunkPaths = [compressedAudioPath];
       } else {
-        console.log('[ScribeSwift] Audio exceeds single-request limit, splitting into chunks...');
         const chunkDir = path.join(workDir, 'chunks');
         fs.mkdirSync(chunkDir, { recursive: true });
         chunkPaths = await splitAudioIntoChunks(compressedAudioPath, chunkDir);
-        console.log(`[ScribeSwift] Split into ${chunkPaths.length} chunk(s).`);
       }
 
       let cumulativeOffset = 0;
@@ -680,7 +532,6 @@ The "speakers" array MUST have exactly ${segments.length} entries, one per segme
       const rawSegments: Array<{ startTime: number; endTime: number; text: string }> = [];
 
       for (let i = 0; i < chunkPaths.length; i++) {
-        console.log(`[ScribeSwift] Transcribing chunk ${i + 1}/${chunkPaths.length} with openai/whisper-large-v3-turbo...`);
         const result = await transcribeChunkWithDeepInfra(openai, chunkPaths[i], targetLanguage);
 
         for (const seg of result.segments) {
@@ -703,7 +554,6 @@ The "speakers" array MUST have exactly ${segments.length} entries, one per segme
         detectedLanguage = 'Auto-detected';
       }
 
-      console.log('[ScribeSwift] Generating speaker labels & executive summary with DeepInfra LLM...');
       const { speakers, summary } = await generateSpeakersAndSummary(openai, rawSegments, detectedLanguage);
 
       const formatTimestamp = (seconds: number): string => {
@@ -747,35 +597,12 @@ The "speakers" array MUST have exactly ${segments.length} entries, one per segme
       });
     } finally {
       if (tempFilePath && fs.existsSync(tempFilePath)) {
-        try {
-          fs.unlinkSync(tempFilePath);
-          console.log('[ScribeSwift] Cleaned up temp upload file.');
-        } catch (e) {
-          console.error('Failed to unlink temp file:', e);
-        }
+        try { fs.unlinkSync(tempFilePath); } catch (e) {}
       }
       if (workDir && fs.existsSync(workDir)) {
-        try {
-          fs.rmSync(workDir, { recursive: true, force: true });
-          console.log('[ScribeSwift] Cleaned up audio scratch directory.');
-        } catch (e) {
-          console.error('Failed to clean up scratch directory:', e);
-        }
+        try { fs.rmSync(workDir, { recursive: true, force: true }); } catch (e) {}
       }
     }
-  });
-
-  app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
-    if (err && err.name === 'MulterError') {
-      const message =
-        err.code === 'LIMIT_FILE_SIZE'
-          ? 'File size exceeds the maximum allowed capacity of 100MB.'
-          : `Upload error: ${err.message}`;
-      console.error('[ScribeSwift] Multer error:', err.code, err.message);
-      return res.status(400).json({ error: message });
-    }
-    console.error('[ScribeSwift] Unhandled server error:', err);
-    return res.status(500).json({ error: err?.message || 'Unexpected server error.' });
   });
 
   if (process.env.NODE_ENV !== 'production') {
